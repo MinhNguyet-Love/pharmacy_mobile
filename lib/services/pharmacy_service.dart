@@ -16,7 +16,7 @@ class PharmacyService {
   Future<List<PharmacyModel>> getPharmacies({
     String? province,
     double? ratingMin,
-    int limit = 2000,
+    int limit = 50000,
   }) async {
     try {
       final response = await ApiService.dio.get(

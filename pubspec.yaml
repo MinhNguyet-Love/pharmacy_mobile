@@ -1,5 +1,5 @@
 name: pharmacy_mobile
-description: "A new Flutter project."
+description: "Mobile app bản đồ nhà thuốc Việt Nam (Pharmacy Map)"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -13,6 +13,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   dio: ^5.4.3+1
   shared_preferences: ^2.2.3
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  flutter_map_marker_cluster: ^1.0.1
 
 dev_dependencies:
   flutter_test:

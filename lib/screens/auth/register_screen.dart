@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -22,15 +23,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscureConfirmPassword = true;
 
   Future<void> _register() async {
-    final String fullname = _fullnameController.text.trim();
-    final String email = _emailController.text.trim();
-    final String password = _passwordController.text.trim();
-    final String confirmPassword = _confirmPasswordController.text.trim();
-
-    print("FULLNAME: $fullname");
-    print("EMAIL: $email");
-    print("PASS: $password");
-    print("CONFIRM: $confirmPassword");
+    final fullname = _fullnameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
 
     if (fullname.isEmpty ||
         email.isEmpty ||
@@ -56,26 +52,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     final result = await _authService.register(fullname, email, password);
 
     if (!mounted) return;
-
-    setState(() {
-      _isLoading = false;
-    });
+    setState(() => _isLoading = false);
 
     if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đăng ký thành công, hãy đăng nhập!')),
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Đăng ký thành công'),
+        ),
       );
       Navigator.pop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'] ?? 'Đăng ký thất bại!')),
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Đăng ký thất bại'),
+        ),
       );
     }
   }

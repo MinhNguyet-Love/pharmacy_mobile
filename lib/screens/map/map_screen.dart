@@ -45,6 +45,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _showSearchResults = true;
   bool _showHeatmap = false;
   bool _sortNearest = true;
+  bool _showToolPanel = false;
 
   LatLng? _myLocation;
 
@@ -251,6 +252,7 @@ class _MapScreenState extends State<MapScreen> {
       _searchResults = filtered;
       _showSearchResults = true;
       _showHeatmap = false;
+      _showToolPanel = false;
     });
 
     _fitMapToMarkers(_pharmacies);
@@ -295,6 +297,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _heatPoints = points;
       _showHeatmap = true;
+      _showToolPanel = false;
     });
   }
 
@@ -402,7 +405,9 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    _showMsg('Backend đã sẵn sàng route export. Bước sau mình sẽ nối nút tải CSV cho Flutter.');
+    _showMsg(
+      'Backend đã sẵn sàng route export. Bước sau mình sẽ nối nút tải CSV cho Flutter.',
+    );
   }
 
   void _fitMapToMarkers(List<PharmacyModel> list) {
@@ -459,12 +464,10 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    // 👉 mở app Google Maps (ưu tiên)
     final googleMapsApp = Uri.parse(
       'google.navigation:q=$lat,$lng&mode=d',
     );
 
-    // 👉 fallback mở web
     final googleMapsWeb = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving',
     );
@@ -478,7 +481,6 @@ class _MapScreenState extends State<MapScreen> {
         return;
       }
 
-      // fallback web
       await launchUrl(
         googleMapsWeb,
         mode: LaunchMode.externalApplication,
@@ -539,7 +541,11 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(height: 18),
                 _detailItem(Icons.location_on_outlined, 'Địa chỉ', pharmacy.address),
                 _detailItem(Icons.map_outlined, 'Tỉnh / Thành', pharmacy.province),
-                _detailItem(Icons.account_balance_outlined, 'Quận / Huyện', pharmacy.district),
+                _detailItem(
+                  Icons.account_balance_outlined,
+                  'Quận / Huyện',
+                  pharmacy.district,
+                ),
                 _detailItem(
                   Icons.phone_outlined,
                   'Số điện thoại',
@@ -763,14 +769,14 @@ class _MapScreenState extends State<MapScreen> {
     final markers = _pharmacies.map((pharmacy) {
       return Marker(
         point: LatLng(pharmacy.lat, pharmacy.lng),
-        width: 52,
-        height: 52,
+        width: 34,
+        height: 20,
         child: GestureDetector(
           onTap: () {
             _moveToPharmacy(pharmacy);
             _showPharmacyBottomSheet(pharmacy);
           },
-          child: _buildPillMarker(),
+          child: _buildCapsuleMarker(),
         ),
       );
     }).toList();
@@ -779,21 +785,21 @@ class _MapScreenState extends State<MapScreen> {
       markers.add(
         Marker(
           point: _myLocation!,
-          width: 50,
-          height: 50,
+          width: 26,
+          height: 26,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.18),
+              color: Colors.blue.withOpacity(0.16),
               shape: BoxShape.circle,
             ),
             child: Center(
               child: Container(
-                width: 18,
-                height: 18,
+                width: 11,
+                height: 11,
                 decoration: BoxDecoration(
                   color: Colors.blue,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
+                  border: Border.all(color: Colors.white, width: 2),
                 ),
               ),
             ),
@@ -805,23 +811,33 @@ class _MapScreenState extends State<MapScreen> {
     return markers;
   }
 
-  Widget _buildPillMarker() {
+  Widget _buildCapsuleMarker() {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFFE91E63),
-        shape: BoxShape.circle,
-        boxShadow: [
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE91E63), Color(0xFFFF7AAE)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        boxShadow: const [
           BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 8,
-            offset: Offset(0, 4),
+            color: Color(0x22000000),
+            blurRadius: 4,
+            offset: Offset(0, 2),
           ),
         ],
+        border: Border.all(
+          color: Colors.white,
+          width: 1.2,
+        ),
       ),
-      child: const Icon(
-        Icons.medication_rounded,
-        color: Colors.white,
-        size: 24,
+      child: const Center(
+        child: Icon(
+          Icons.medication_rounded,
+          color: Colors.white,
+          size: 12,
+        ),
       ),
     );
   }
@@ -837,21 +853,22 @@ class _MapScreenState extends State<MapScreen> {
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.pharmacy_mobile',
+          panBuffer: 1,
         ),
         if (_showHeatmap && _heatPoints.isNotEmpty)
           HeatMapLayer(
             heatMapDataSource: InMemoryHeatMapDataSource(data: _heatPoints),
             heatMapOptions: HeatMapOptions(
               minOpacity: 0.3,
-              radius: 20,
+              radius: 18,
             ),
           ),
         MarkerClusterLayerWidget(
           options: MarkerClusterLayerOptions(
-            maxClusterRadius: 30,
-            size: const Size(44, 44),
+            maxClusterRadius: 26,
+            size: const Size(36, 36),
             alignment: Alignment.center,
-            padding: const EdgeInsets.all(30),
+            padding: const EdgeInsets.all(20),
             maxZoom: 16,
             markers: _buildMarkers(),
             builder: (context, markers) {
@@ -861,6 +878,13 @@ class _MapScreenState extends State<MapScreen> {
                     colors: [Color(0xFFE91E63), Color(0xFFF06292)],
                   ),
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x22000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Center(
                   child: Text(
@@ -868,7 +892,7 @@ class _MapScreenState extends State<MapScreen> {
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                      fontSize: 10,
                     ),
                   ),
                 ),
@@ -877,7 +901,7 @@ class _MapScreenState extends State<MapScreen> {
             onClusterTap: (cluster) {
               _mapController.move(
                 cluster.bounds.center,
-                _mapController.camera.zoom + 2,
+                _mapController.camera.zoom + 1.5,
               );
             },
           ),
@@ -890,18 +914,18 @@ class _MapScreenState extends State<MapScreen> {
     return Positioned(
       top: 14,
       left: 14,
-      right: 84,
+      right: 76,
       child: Container(
-        height: 54,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.96),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: const [
             BoxShadow(
               color: Color(0x1A000000),
-              blurRadius: 12,
-              offset: Offset(0, 6),
+              blurRadius: 10,
+              offset: Offset(0, 4),
             ),
           ],
         ),
@@ -916,16 +940,19 @@ class _MapScreenState extends State<MapScreen> {
                 decoration: const InputDecoration(
                   hintText: 'Tìm nhà thuốc...',
                   border: InputBorder.none,
+                  isDense: true,
                 ),
               ),
             ),
             IconButton(
               onPressed: _runSearch,
-              icon: const Icon(Icons.search),
+              icon: const Icon(Icons.search, size: 20),
+              splashRadius: 20,
             ),
             IconButton(
               onPressed: _closeSearchBar,
-              icon: const Icon(Icons.close),
+              icon: const Icon(Icons.close, size: 20),
+              splashRadius: 20,
             ),
           ],
         ),
@@ -933,24 +960,39 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildIconOnlyActions() {
+  Widget _buildTopRightControls() {
     return Positioned(
       top: 14,
-      right: 14,
+      right: 12,
       child: Column(
         children: [
+          _buildCompactRoleBadge(),
+          const SizedBox(height: 8),
           _buildRoundButton(
             icon: Icons.search,
             onTap: () {
               setState(() {
                 _showSearchBar = true;
+                _showToolPanel = false;
               });
             },
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           _buildRoundButton(
             icon: Icons.filter_alt_outlined,
-            onTap: _openFilterSheet,
+            onTap: () {
+              setState(() => _showToolPanel = false);
+              _openFilterSheet();
+            },
+          ),
+          const SizedBox(height: 8),
+          _buildRoundButton(
+            icon: _showToolPanel ? Icons.close : Icons.menu,
+            onTap: () {
+              setState(() {
+                _showToolPanel = !_showToolPanel;
+              });
+            },
           ),
         ],
       ),
@@ -963,16 +1005,17 @@ class _MapScreenState extends State<MapScreen> {
   }) {
     return Material(
       color: Colors.white.withOpacity(0.96),
-      borderRadius: BorderRadius.circular(16),
-      elevation: 4,
+      borderRadius: BorderRadius.circular(14),
+      elevation: 3,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: SizedBox(
-          width: 52,
-          height: 52,
+          width: 44,
+          height: 44,
           child: Icon(
             icon,
+            size: 21,
             color: const Color(0xFF222222),
           ),
         ),
@@ -980,290 +1023,351 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildRoleBadge() {
-    return Positioned(
-      top: 140,
-      right: 14,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.96),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x26000000),
-              blurRadius: 12,
-              offset: Offset(0, 6),
+  Widget _buildCompactRoleBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.verified_user, color: _roleColor, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            _roleLabel,
+            style: TextStyle(
+              color: _roleColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.verified_user, color: _roleColor, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              _roleLabel,
-              style: TextStyle(
-                color: _roleColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildToolPanel() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final panelWidth = min(screenWidth * 0.76, 290.0);
+
     return Positioned(
       left: 12,
       top: 88,
-      child: Container(
-        width: 280,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.96),
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x26000000),
-              blurRadius: 18,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Công cụ hiển thị',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 17,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Quyền hiện tại: $_roleLabel',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: _roleColor,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _pharmacies = _allPharmacies;
-                    _searchResults = _allPharmacies;
-                    _showSearchResults = true;
-                    _showHeatmap = false;
-                  });
-                  _fitMapToMarkers(_pharmacies);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF59B15A),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                icon: const Icon(Icons.medication_rounded),
-                label: const Text('Tất cả nhà thuốc'),
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (_canViewAdvancedFeatures) ...[
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _showProvinceStatsDialog,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3E8BE8),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  icon: const Icon(Icons.local_hospital),
-                  label: const Text('Xem thông tin khu vực'),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _toggleHeatmap,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF9800),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  icon: Icon(
-                    _showHeatmap
-                        ? Icons.layers_clear
-                        : Icons.local_fire_department,
-                  ),
-                  label: Text(_showHeatmap ? 'Tắt heatmap' : 'Xem heatmap'),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 46,
-                    child: ElevatedButton.icon(
-                      onPressed: _getMyLocation,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4FCB79),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      icon: const Icon(Icons.my_location),
-                      label: const Text('Lấy vị trí'),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 74,
-                  child: TextField(
-                    controller: _radiusController,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    decoration: InputDecoration(
-                      hintText: '5',
-                      suffixText: 'km',
-                      isDense: true,
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 46,
-              child: ElevatedButton.icon(
-                onPressed: _filterNearby,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E88E5),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                icon: const Icon(Icons.near_me),
-                label: const Text('Lọc gần tôi'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Checkbox(
-                  value: _sortNearest,
-                  onChanged: (v) {
-                    setState(() {
-                      _sortNearest = v ?? true;
-                    });
-                  },
-                ),
-                const Expanded(
-                  child: Text(
-                    'Sắp xếp gần nhất',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-            if (_canExport) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: ElevatedButton.icon(
-                  onPressed: _exportCsv,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6F42C1),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  icon: const Icon(Icons.download),
-                  label: const Text('Export CSV'),
-                ),
-              ),
-            ],
-            if (_isAdmin) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Text(
-                  'Admin có thể mở rộng thêm màn quản lý users và pharmacies ở bước tiếp theo.',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Container(
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        offset: _showToolPanel ? Offset.zero : const Offset(-1.05, 0),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: _showToolPanel ? 1 : 0,
+          child: IgnorePointer(
+            ignoring: !_showToolPanel,
+            child: Container(
+              width: panelWidth,
+              constraints: const BoxConstraints(maxHeight: 470),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.location_on_outlined, color: Colors.black54),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _myLocation == null
-                          ? 'Chưa lấy được vị trí'
-                          : 'Đã lấy vị trí hiện tại',
-                      style: TextStyle(
-                        color: _myLocation == null ? Colors.red : Colors.green,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                color: Colors.white.withOpacity(0.96),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x26000000),
+                    blurRadius: 16,
+                    offset: Offset(0, 8),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Kết quả hiển thị: ${_pharmacies.length}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Công cụ hiển thị',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Quyền hiện tại: $_roleLabel',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: _roleColor,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _pharmacies = _allPharmacies;
+                            _searchResults = _allPharmacies;
+                            _showSearchResults = true;
+                            _showHeatmap = false;
+                            _showToolPanel = false;
+                          });
+                          _fitMapToMarkers(_pharmacies);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF59B15A),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        icon: const Icon(Icons.medication_rounded, size: 18),
+                        label: const Text(
+                          'Tất cả nhà thuốc',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_canViewAdvancedFeatures) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            setState(() => _showToolPanel = false);
+                            _showProvinceStatsDialog();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF3E8BE8),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(Icons.local_hospital, size: 18),
+                          label: const Text(
+                            'Xem thông tin khu vực',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          onPressed: _toggleHeatmap,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF9800),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: Icon(
+                            _showHeatmap
+                                ? Icons.layers_clear
+                                : Icons.local_fire_department,
+                            size: 18,
+                          ),
+                          label: Text(
+                            _showHeatmap ? 'Tắt heatmap' : 'Xem heatmap',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 42,
+                            child: ElevatedButton.icon(
+                              onPressed: _getMyLocation,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF4FCB79),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                padding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                              icon: const Icon(Icons.my_location, size: 18),
+                              label: const Text(
+                                'Lấy vị trí',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 72,
+                          child: TextField(
+                            controller: _radiusController,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 14),
+                            decoration: InputDecoration(
+                              hintText: '5',
+                              suffixText: 'km',
+                              suffixStyle: const TextStyle(fontSize: 12),
+                              isDense: true,
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              contentPadding:
+                              const EdgeInsets.symmetric(vertical: 12),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 42,
+                      child: ElevatedButton.icon(
+                        onPressed: _filterNearby,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E88E5),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        icon: const Icon(Icons.near_me, size: 18),
+                        label: const Text(
+                          'Lọc gần tôi',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Transform.scale(
+                          scale: 0.9,
+                          child: Checkbox(
+                            value: _sortNearest,
+                            onChanged: (v) {
+                              setState(() {
+                                _sortNearest = v ?? true;
+                              });
+                            },
+                          ),
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'Sắp xếp gần nhất',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_canExport) ...[
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: ElevatedButton.icon(
+                          onPressed: _exportCsv,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF6F42C1),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(Icons.download, size: 18),
+                          label: const Text(
+                            'Export CSV',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_isAdmin) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Admin có thể mở rộng thêm màn quản lý users và pharmacies ở bước tiếp theo.',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_outlined,
+                            color: Colors.black54,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _myLocation == null
+                                  ? 'Chưa lấy được vị trí'
+                                  : 'Đã lấy vị trí hiện tại',
+                              style: TextStyle(
+                                color:
+                                _myLocation == null ? Colors.red : Colors.green,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Kết quả: ${_pharmacies.length}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1271,18 +1375,18 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget _buildSearchResultPanel() {
     return Positioned(
-      left: 12,
-      right: 12,
-      bottom: 12,
+      left: 10,
+      right: 10,
+      bottom: 10,
       child: Container(
-        constraints: const BoxConstraints(maxHeight: 340),
+        constraints: const BoxConstraints(maxHeight: 300),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: const [
             BoxShadow(
               color: Color(0x26000000),
-              blurRadius: 18,
+              blurRadius: 16,
               offset: Offset(0, 8),
             ),
           ],
@@ -1290,25 +1394,25 @@ class _MapScreenState extends State<MapScreen> {
         child: Column(
           children: [
             Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 10),
-              width: 42,
-              height: 5,
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 38,
+              height: 4,
               decoration: BoxDecoration(
                 color: Colors.grey.shade400,
                 borderRadius: BorderRadius.circular(99),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       _searchController.text.trim().isEmpty
                           ? 'Kết quả tìm kiếm'
-                          : 'Kết quả tìm kiếm (${_searchResults.length})',
+                          : 'Kết quả (${_searchResults.length})',
                       style: const TextStyle(
-                        fontSize: 17,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -1321,14 +1425,15 @@ class _MapScreenState extends State<MapScreen> {
                     },
                     icon: const Icon(
                       Icons.close,
-                      size: 18,
+                      size: 16,
                       color: Color(0xFFE91E63),
                     ),
                     label: const Text(
-                      'Đóng danh sách',
+                      'Đóng',
                       style: TextStyle(
                         color: Color(0xFFE91E63),
                         fontWeight: FontWeight.bold,
+                        fontSize: 13,
                       ),
                     ),
                   ),
@@ -1356,9 +1461,10 @@ class _MapScreenState extends State<MapScreen> {
                   ).toStringAsFixed(2);
 
                   return ListTile(
+                    dense: true,
                     leading: Container(
-                      width: 44,
-                      height: 44,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFE4EE),
                         borderRadius: BorderRadius.circular(12),
@@ -1366,6 +1472,7 @@ class _MapScreenState extends State<MapScreen> {
                       child: const Icon(
                         Icons.medication_rounded,
                         color: Color(0xFFE91E63),
+                        size: 20,
                       ),
                     ),
                     title: Text(
@@ -1374,6 +1481,7 @@ class _MapScreenState extends State<MapScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
                     ),
                     subtitle: Text(
@@ -1382,8 +1490,9 @@ class _MapScreenState extends State<MapScreen> {
                           : '${p.address}\nCách ${distanceText} km',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5),
                     ),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: const Icon(Icons.chevron_right, size: 18),
                     onTap: () {
                       _moveToPharmacy(p);
                       _showPharmacyBottomSheet(p);
@@ -1429,9 +1538,22 @@ class _MapScreenState extends State<MapScreen> {
           : Stack(
         children: [
           Positioned.fill(child: _buildMap()),
-          if (_showSearchBar) _buildSearchBox() else _buildIconOnlyActions(),
+          if (_showToolPanel)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _showToolPanel = false;
+                  });
+                },
+                child: Container(
+                  color: Colors.black.withOpacity(0.08),
+                ),
+              ),
+            ),
+          if (_showSearchBar) _buildSearchBox(),
+          if (!_showSearchBar) _buildTopRightControls(),
           _buildToolPanel(),
-          _buildRoleBadge(),
           if (_showSearchResults) _buildSearchResultPanel(),
         ],
       ),

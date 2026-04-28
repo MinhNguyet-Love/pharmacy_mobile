@@ -35,6 +35,7 @@ class _MapScreenState extends State<MapScreen> {
   List<WeightedLatLng> _heatPoints = [];
 
   String? _selectedProvince;
+
   final TextEditingController _ratingController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _radiusController =
@@ -42,7 +43,7 @@ class _MapScreenState extends State<MapScreen> {
 
   bool _isLoading = true;
   bool _showSearchBar = false;
-  bool _showSearchResults = true;
+  bool _showSearchResults = false;
   bool _showHeatmap = false;
   bool _sortNearest = true;
   bool _showToolPanel = false;
@@ -89,72 +90,100 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
 
-    final provinces = await _pharmacyService.getProvinces();
+    try {
+      final provinces = await _pharmacyService.getProvinces();
 
-    const bbox = '102.0,8.0,110.5,24.5';
+      const bbox = '102.0,8.0,110.5,24.5';
 
-    final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
-      bbox: bbox,
-    );
+      final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
+        bbox: bbox,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _provinces = provinces;
-      _allPharmacies = pharmacies;
-      _pharmacies = pharmacies;
-      _searchResults = pharmacies;
-      _showSearchResults = true;
-      _isLoading = false;
-    });
+      setState(() {
+        _provinces = provinces;
+        _allPharmacies = pharmacies;
+        _pharmacies = pharmacies;
+        _searchResults = [];
+        _showSearchResults = false;
+        _isLoading = false;
+      });
 
-    _fitMapToMarkers(_pharmacies);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mapController.move(_defaultCenter, 5.6);
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+      _showMsg('Không tải được dữ liệu bản đồ. Kiểm tra backend/API.');
+    }
   }
 
   Future<void> _applyFilter() async {
     Navigator.pop(context);
     setState(() => _isLoading = true);
 
-    final ratingMin = double.tryParse(_ratingController.text.trim());
+    try {
+      final ratingMin = double.tryParse(_ratingController.text.trim());
 
-    const bbox = '102.0,8.0,110.5,24.5';
+      const bbox = '102.0,8.0,110.5,24.5';
 
-    final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
-      bbox: bbox,
-      province: _selectedProvince,
-      ratingMin: ratingMin,
-    );
+      final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
+        bbox: bbox,
+        province: _selectedProvince,
+        ratingMin: ratingMin,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _allPharmacies = pharmacies;
-      _pharmacies = pharmacies;
-      _searchResults = pharmacies;
-      _showSearchResults = true;
-      _showHeatmap = false;
-      _isLoading = false;
-    });
+      setState(() {
+        _allPharmacies = pharmacies;
+        _pharmacies = pharmacies;
+        _searchResults = [];
+        _showSearchResults = false;
+        _showHeatmap = false;
+        _isLoading = false;
+      });
 
-    _fitMapToMarkers(_pharmacies);
+      _fitMapToMarkers(_pharmacies);
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+      _showMsg('Lọc dữ liệu thất bại. Kiểm tra API /pharmacies.geojson.');
+    }
+  }
+
+  String _normalizeText(String input) {
+    return input
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ');
   }
 
   void _searchPharmacy(String keyword) {
-    final text = keyword.trim().toLowerCase();
+    final text = _normalizeText(keyword);
 
     if (text.isEmpty) {
       setState(() {
-        _searchResults = _pharmacies;
-        _showSearchResults = true;
+        _searchResults = [];
+        _showSearchResults = false;
       });
       return;
     }
 
     final results = _pharmacies.where((p) {
-      return p.name.toLowerCase().contains(text) ||
-          p.address.toLowerCase().contains(text) ||
-          p.province.toLowerCase().contains(text) ||
-          p.district.toLowerCase().contains(text);
+      final name = _normalizeText(p.name);
+      final address = _normalizeText(p.address);
+      final province = _normalizeText(p.province);
+      final district = _normalizeText(p.district);
+
+      return name.contains(text) ||
+          address.contains(text) ||
+          province.contains(text) ||
+          district.contains(text);
     }).toList();
 
     setState(() {
@@ -164,48 +193,78 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _runSearch() async {
-    _searchPharmacy(_searchController.text);
+    FocusScope.of(context).unfocus();
+
+    final keyword = _searchController.text.trim();
+
+    if (keyword.isEmpty) {
+      _showMsg('Bạn hãy nhập tên nhà thuốc hoặc địa chỉ cần tìm');
+      setState(() {
+        _searchResults = [];
+        _showSearchResults = false;
+      });
+      return;
+    }
+
+    _searchPharmacy(keyword);
+
+    if (_searchResults.length == 1) {
+      _moveToPharmacy(_searchResults.first);
+    } else if (_searchResults.length > 1) {
+      _fitMapToMarkers(_searchResults);
+    }
   }
 
   void _closeSearchBar() {
     setState(() {
       _showSearchBar = false;
       _searchController.clear();
-      _searchResults = _pharmacies;
-      _showSearchResults = true;
+      _searchResults = [];
+      _showSearchResults = false;
     });
   }
 
   Future<void> _getMyLocation() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      _showMsg('Bạn chưa bật GPS / dịch vụ vị trí');
-      return;
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) {
+        _showMsg('Bạn chưa bật GPS / dịch vụ vị trí');
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        _showMsg('Bạn chưa cấp quyền vị trí');
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _showMsg('Quyền vị trí đã bị chặn. Hãy mở Cài đặt để cấp quyền.');
+        await Geolocator.openAppSettings();
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _myLocation = LatLng(pos.latitude, pos.longitude);
+      });
+
+      _mapController.move(_myLocation!, 15.5);
+      _showMsg('Đã lấy vị trí hiện tại');
+    } catch (e) {
+      _showMsg('Không lấy được vị trí. Kiểm tra GPS/quyền vị trí.');
     }
-
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      _showMsg('Ứng dụng chưa được cấp quyền vị trí');
-      return;
-    }
-
-    final pos = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _myLocation = LatLng(pos.latitude, pos.longitude);
-    });
-
-    _mapController.move(_myLocation!, 15.5);
-    _showMsg('Đã lấy vị trí hiện tại');
   }
 
   double _distanceInKm(LatLng a, LatLng b) {
@@ -235,7 +294,13 @@ class _MapScreenState extends State<MapScreen> {
     final radiusKm = double.tryParse(_radiusController.text.trim()) ?? 5;
 
     final filtered = _allPharmacies.where((p) {
-      final d = _distanceInKm(_myLocation!, LatLng(p.lat, p.lng));
+      if (p.lat == 0 || p.lng == 0) return false;
+
+      final d = _distanceInKm(
+        _myLocation!,
+        LatLng(p.lat, p.lng),
+      );
+
       return d <= radiusKm;
     }).toList();
 
@@ -277,28 +342,33 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    final ratingMin = double.tryParse(_ratingController.text.trim());
-    final heatData = await _pharmacyService.getHeatmap(
-      province: _selectedProvince,
-      ratingMin: ratingMin,
-    );
+    try {
+      final ratingMin = double.tryParse(_ratingController.text.trim());
 
-    final points = heatData.map((e) {
-      final lat = (e['lat'] as num).toDouble();
-      final lon = (e['lon'] as num).toDouble();
-      final weight = e['w'] == null ? 1.0 : (e['w'] as num).toDouble();
-
-      return WeightedLatLng(
-        LatLng(lat, lon),
-        weight,
+      final heatData = await _pharmacyService.getHeatmap(
+        province: _selectedProvince,
+        ratingMin: ratingMin,
       );
-    }).toList();
 
-    setState(() {
-      _heatPoints = points;
-      _showHeatmap = true;
-      _showToolPanel = false;
-    });
+      final points = heatData.map((e) {
+        final lat = (e['lat'] as num).toDouble();
+        final lon = (e['lon'] as num).toDouble();
+        final weight = e['w'] == null ? 1.0 : (e['w'] as num).toDouble();
+
+        return WeightedLatLng(
+          LatLng(lat, lon),
+          weight,
+        );
+      }).toList();
+
+      setState(() {
+        _heatPoints = points;
+        _showHeatmap = true;
+        _showToolPanel = false;
+      });
+    } catch (e) {
+      _showMsg('Không tải được heatmap. Kiểm tra API /heat.');
+    }
   }
 
   Future<void> _showProvinceStatsDialog() async {
@@ -307,96 +377,101 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    if (_provinceStats.isEmpty) {
-      _provinceStats = await _pharmacyService.getProvinceStats();
-    }
+    try {
+      if (_provinceStats.isEmpty) {
+        _provinceStats = await _pharmacyService.getProvinceStats();
+      }
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    showDialog(
-      context: context,
-      builder: (_) {
-        return Dialog(
-          insetPadding: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: SizedBox(
-            height: 520,
-            child: Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 18, 20, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Thống kê theo tỉnh',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+      showDialog(
+        context: context,
+        builder: (_) {
+          return Dialog(
+            insetPadding: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: SizedBox(
+              height: 520,
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 18, 20, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Thống kê theo tỉnh',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(14),
-                    itemCount: _provinceStats.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final item = _provinceStats[index];
-                      return Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item['province']?.toString() ?? '',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text('Tổng số: ${item['total'] ?? 0}'),
-                            Text('Rating TB: ${item['avg_rating'] ?? '-'}'),
-                            Text('Mở cửa: ${item['open_count'] ?? 0}'),
-                            Text('Đóng cửa: ${item['closed_count'] ?? 0}'),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE91E63),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Đóng'),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(14),
+                      itemCount: _provinceStats.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final item = _provinceStats[index];
+
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item['province']?.toString() ?? '',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text('Tổng số: ${item['total'] ?? 0}'),
+                              Text('Rating TB: ${item['avg_rating'] ?? '-'}'),
+                              Text('Mở cửa: ${item['open_count'] ?? 0}'),
+                              Text('Đóng cửa: ${item['closed_count'] ?? 0}'),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE91E63),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Đóng'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    } catch (e) {
+      _showMsg('Không tải được thống kê theo tỉnh.');
+    }
   }
 
   Future<void> _exportCsv() async {
@@ -406,30 +481,34 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     _showMsg(
-      'Backend đã sẵn sàng route export. Bước sau mình sẽ nối nút tải CSV cho Flutter.',
+      'Backend đã có route export. Bước sau nối tải CSV cho Flutter.',
     );
   }
 
   void _fitMapToMarkers(List<PharmacyModel> list) {
-    if (list.isEmpty) {
-      _mapController.move(_defaultCenter, 6);
+    final validList = list.where((p) => p.lat != 0 && p.lng != 0).toList();
+
+    if (validList.isEmpty) {
+      _mapController.move(_defaultCenter, 5.6);
       return;
     }
 
-    if (list.length == 1) {
-      final p = list.first;
+    if (validList.length == 1) {
+      final p = validList.first;
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.move(LatLng(p.lat, p.lng), 16);
       });
+
       return;
     }
 
-    double minLat = list.first.lat;
-    double maxLat = list.first.lat;
-    double minLng = list.first.lng;
-    double maxLng = list.first.lng;
+    double minLat = validList.first.lat;
+    double maxLat = validList.first.lat;
+    double minLng = validList.first.lng;
+    double maxLng = validList.first.lng;
 
-    for (final p in list) {
+    for (final p in validList) {
       if (p.lat < minLat) minLat = p.lat;
       if (p.lat > maxLat) maxLat = p.lat;
       if (p.lng < minLng) minLng = p.lng;
@@ -445,13 +524,18 @@ class _MapScreenState extends State<MapScreen> {
       _mapController.fitCamera(
         CameraFit.bounds(
           bounds: bounds,
-          padding: const EdgeInsets.all(36),
+          padding: const EdgeInsets.fromLTRB(40, 90, 40, 260),
         ),
       );
     });
   }
 
   void _moveToPharmacy(PharmacyModel p) {
+    setState(() {
+      _showSearchResults = false;
+      _showToolPanel = false;
+    });
+
     _mapController.move(LatLng(p.lat, p.lng), 17);
   }
 
@@ -493,8 +577,10 @@ class _MapScreenState extends State<MapScreen> {
   void _showPharmacyBottomSheet(PharmacyModel pharmacy) {
     final distanceText = _myLocation == null
         ? null
-        : _distanceInKm(_myLocation!, LatLng(pharmacy.lat, pharmacy.lng))
-        .toStringAsFixed(2);
+        : _distanceInKm(
+      _myLocation!,
+      LatLng(pharmacy.lat, pharmacy.lng),
+    ).toStringAsFixed(2);
 
     showModalBottomSheet(
       context: context,
@@ -539,8 +625,16 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
                 const SizedBox(height: 18),
-                _detailItem(Icons.location_on_outlined, 'Địa chỉ', pharmacy.address),
-                _detailItem(Icons.map_outlined, 'Tỉnh / Thành', pharmacy.province),
+                _detailItem(
+                  Icons.location_on_outlined,
+                  'Địa chỉ',
+                  pharmacy.address,
+                ),
+                _detailItem(
+                  Icons.map_outlined,
+                  'Tỉnh / Thành',
+                  pharmacy.province,
+                ),
                 _detailItem(
                   Icons.account_balance_outlined,
                   'Quận / Huyện',
@@ -562,7 +656,11 @@ class _MapScreenState extends State<MapScreen> {
                   pharmacy.status.isEmpty ? 'Không có' : pharmacy.status,
                 ),
                 if (distanceText != null)
-                  _detailItem(Icons.near_me_outlined, 'Khoảng cách', '$distanceText km'),
+                  _detailItem(
+                    Icons.near_me_outlined,
+                    'Khoảng cách',
+                    '$distanceText km',
+                  ),
                 const SizedBox(height: 18),
                 SizedBox(
                   width: double.infinity,
@@ -617,7 +715,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  value,
+                  value.isEmpty ? 'Không có' : value,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     height: 1.4,
@@ -701,8 +799,9 @@ class _MapScreenState extends State<MapScreen> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: _ratingController,
-                    keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       hintText: 'VD: 4.0',
                       filled: true,
@@ -742,11 +841,13 @@ class _MapScreenState extends State<MapScreen> {
                           _selectedProvince = null;
                           _ratingController.clear();
                           _pharmacies = _allPharmacies;
-                          _searchResults = _allPharmacies;
+                          _searchResults = [];
                           _showHeatmap = false;
-                          _showSearchResults = true;
+                          _showSearchResults = false;
                         });
+
                         Navigator.pop(context);
+                        _mapController.move(_defaultCenter, 5.6);
                       },
                       style: OutlinedButton.styleFrom(
                         shape: RoundedRectangleBorder(
@@ -766,11 +867,15 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   List<Marker> _buildMarkers() {
-    final markers = _pharmacies.map((pharmacy) {
+    final validPharmacies = _pharmacies.where((p) {
+      return p.lat != 0 && p.lng != 0;
+    }).toList();
+
+    final markers = validPharmacies.map((pharmacy) {
       return Marker(
         point: LatLng(pharmacy.lat, pharmacy.lng),
-        width: 34,
-        height: 20,
+        width: 26,
+        height: 18,
         child: GestureDetector(
           onTap: () {
             _moveToPharmacy(pharmacy);
@@ -785,8 +890,8 @@ class _MapScreenState extends State<MapScreen> {
       markers.add(
         Marker(
           point: _myLocation!,
-          width: 26,
-          height: 26,
+          width: 30,
+          height: 30,
           child: Container(
             decoration: BoxDecoration(
               color: Colors.blue.withOpacity(0.16),
@@ -794,8 +899,8 @@ class _MapScreenState extends State<MapScreen> {
             ),
             child: Center(
               child: Container(
-                width: 11,
-                height: 11,
+                width: 12,
+                height: 12,
                 decoration: BoxDecoration(
                   color: Colors.blue,
                   shape: BoxShape.circle,
@@ -823,20 +928,20 @@ class _MapScreenState extends State<MapScreen> {
         boxShadow: const [
           BoxShadow(
             color: Color(0x22000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
+            blurRadius: 3,
+            offset: Offset(0, 1),
           ),
         ],
         border: Border.all(
           color: Colors.white,
-          width: 1.2,
+          width: 1,
         ),
       ),
       child: const Center(
         child: Icon(
           Icons.medication_rounded,
           color: Colors.white,
-          size: 12,
+          size: 10,
         ),
       ),
     );
@@ -847,13 +952,19 @@ class _MapScreenState extends State<MapScreen> {
       mapController: _mapController,
       options: MapOptions(
         initialCenter: _defaultCenter,
-        initialZoom: 6,
+        initialZoom: 5.6,
+        minZoom: 4,
+        maxZoom: 18,
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+        ),
       ),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.pharmacy_mobile',
           panBuffer: 1,
+          maxNativeZoom: 19,
         ),
         if (_showHeatmap && _heatPoints.isNotEmpty)
           HeatMapLayer(
@@ -865,11 +976,11 @@ class _MapScreenState extends State<MapScreen> {
           ),
         MarkerClusterLayerWidget(
           options: MarkerClusterLayerOptions(
-            maxClusterRadius: 26,
-            size: const Size(36, 36),
+            maxClusterRadius: 70,
+            disableClusteringAtZoom: 15,
+            size: const Size(34, 34),
             alignment: Alignment.center,
-            padding: const EdgeInsets.all(20),
-            maxZoom: 16,
+            padding: const EdgeInsets.all(80),
             markers: _buildMarkers(),
             builder: (context, markers) {
               return Container(
@@ -892,16 +1003,21 @@ class _MapScreenState extends State<MapScreen> {
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 10,
+                      fontSize: 9.5,
                     ),
                   ),
                 ),
               );
             },
             onClusterTap: (cluster) {
+              final nextZoom = min(
+                _mapController.camera.zoom + 2,
+                17.0,
+              );
+
               _mapController.move(
                 cluster.bounds.center,
-                _mapController.camera.zoom + 1.5,
+                nextZoom,
               );
             },
           ),
@@ -910,16 +1026,48 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget _buildTopTitle() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 8,
+      left: 12,
+      right: 82,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.94),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A000000),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Text(
+          'Bản đồ nhà thuốc',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            color: Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchBox() {
     return Positioned(
-      top: 14,
-      left: 14,
-      right: 76,
+      top: MediaQuery.of(context).padding.top + 8,
+      left: 12,
+      right: 12,
       child: Container(
         height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.96),
+          color: Colors.white.withOpacity(0.98),
           borderRadius: BorderRadius.circular(18),
           boxShadow: const [
             BoxShadow(
@@ -935,10 +1083,11 @@ class _MapScreenState extends State<MapScreen> {
               child: TextField(
                 controller: _searchController,
                 autofocus: true,
+                textInputAction: TextInputAction.search,
                 onChanged: _searchPharmacy,
                 onSubmitted: (_) => _runSearch(),
                 decoration: const InputDecoration(
-                  hintText: 'Tìm nhà thuốc...',
+                  hintText: 'Tìm nhà thuốc, địa chỉ, tỉnh...',
                   border: InputBorder.none,
                   isDense: true,
                 ),
@@ -946,12 +1095,12 @@ class _MapScreenState extends State<MapScreen> {
             ),
             IconButton(
               onPressed: _runSearch,
-              icon: const Icon(Icons.search, size: 20),
+              icon: const Icon(Icons.search, size: 21),
               splashRadius: 20,
             ),
             IconButton(
               onPressed: _closeSearchBar,
-              icon: const Icon(Icons.close, size: 20),
+              icon: const Icon(Icons.close, size: 21),
               splashRadius: 20,
             ),
           ],
@@ -962,8 +1111,8 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget _buildTopRightControls() {
     return Positioned(
-      top: 14,
-      right: 12,
+      top: MediaQuery.of(context).padding.top + 58,
+      right: 10,
       child: Column(
         children: [
           _buildCompactRoleBadge(),
@@ -974,6 +1123,7 @@ class _MapScreenState extends State<MapScreen> {
               setState(() {
                 _showSearchBar = true;
                 _showToolPanel = false;
+                _showSearchResults = false;
               });
             },
           ),
@@ -1011,11 +1161,11 @@ class _MapScreenState extends State<MapScreen> {
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: SizedBox(
-          width: 44,
-          height: 44,
+          width: 42,
+          height: 42,
           child: Icon(
             icon,
-            size: 21,
+            size: 20,
             color: const Color(0xFF222222),
           ),
         ),
@@ -1025,7 +1175,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget _buildCompactRoleBadge() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.96),
         borderRadius: BorderRadius.circular(14),
@@ -1040,14 +1190,14 @@ class _MapScreenState extends State<MapScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.verified_user, color: _roleColor, size: 16),
-          const SizedBox(width: 6),
+          Icon(Icons.verified_user, color: _roleColor, size: 15),
+          const SizedBox(width: 5),
           Text(
             _roleLabel,
             style: TextStyle(
               color: _roleColor,
               fontWeight: FontWeight.bold,
-              fontSize: 12,
+              fontSize: 11,
             ),
           ),
         ],
@@ -1061,7 +1211,7 @@ class _MapScreenState extends State<MapScreen> {
 
     return Positioned(
       left: 12,
-      top: 88,
+      top: MediaQuery.of(context).padding.top + 82,
       child: AnimatedSlide(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
@@ -1073,10 +1223,12 @@ class _MapScreenState extends State<MapScreen> {
             ignoring: !_showToolPanel,
             child: Container(
               width: panelWidth,
-              constraints: const BoxConstraints(maxHeight: 470),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.68,
+              ),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.96),
+                color: Colors.white.withOpacity(0.97),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: const [
                   BoxShadow(
@@ -1114,12 +1266,14 @@ class _MapScreenState extends State<MapScreen> {
                         onPressed: () {
                           setState(() {
                             _pharmacies = _allPharmacies;
-                            _searchResults = _allPharmacies;
-                            _showSearchResults = true;
+                            _searchResults = [];
+                            _showSearchResults = false;
                             _showHeatmap = false;
                             _showToolPanel = false;
+                            _searchController.clear();
                           });
-                          _fitMapToMarkers(_pharmacies);
+
+                          _mapController.move(_defaultCenter, 5.6);
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF59B15A),
@@ -1314,7 +1468,7 @@ class _MapScreenState extends State<MapScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Text(
-                          'Admin có thể mở rộng thêm màn quản lý users và pharmacies ở bước tiếp theo.',
+                          'Admin có thể mở rộng thêm màn quản lý users và pharmacies.',
                           style: TextStyle(
                             color: Colors.red,
                             fontWeight: FontWeight.w600,
@@ -1344,8 +1498,9 @@ class _MapScreenState extends State<MapScreen> {
                                   ? 'Chưa lấy được vị trí'
                                   : 'Đã lấy vị trí hiện tại',
                               style: TextStyle(
-                                color:
-                                _myLocation == null ? Colors.red : Colors.green,
+                                color: _myLocation == null
+                                    ? Colors.red
+                                    : Colors.green,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
                               ),
@@ -1356,7 +1511,7 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Kết quả: ${_pharmacies.length}',
+                      'Đang hiển thị: ${_pharmacies.length}',
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
@@ -1379,7 +1534,10 @@ class _MapScreenState extends State<MapScreen> {
       right: 10,
       bottom: 10,
       child: Container(
-        constraints: const BoxConstraints(maxHeight: 300),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.36,
+          minHeight: 120,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -1392,9 +1550,10 @@ class _MapScreenState extends State<MapScreen> {
           ],
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              margin: const EdgeInsets.only(top: 8, bottom: 6),
               width: 38,
               height: 4,
               decoration: BoxDecoration(
@@ -1403,21 +1562,19 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              padding: const EdgeInsets.fromLTRB(14, 0, 10, 6),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      _searchController.text.trim().isEmpty
-                          ? 'Kết quả tìm kiếm'
-                          : 'Kết quả (${_searchResults.length})',
+                      'Kết quả (${_searchResults.length})',
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  TextButton.icon(
+                  IconButton(
                     onPressed: () {
                       setState(() {
                         _showSearchResults = false;
@@ -1425,34 +1582,29 @@ class _MapScreenState extends State<MapScreen> {
                     },
                     icon: const Icon(
                       Icons.close,
-                      size: 16,
+                      size: 20,
                       color: Color(0xFFE91E63),
-                    ),
-                    label: const Text(
-                      'Đóng',
-                      style: TextStyle(
-                        color: Color(0xFFE91E63),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
                     ),
                   ),
                 ],
               ),
             ),
             const Divider(height: 1),
-            Expanded(
+            Flexible(
               child: _searchResults.isEmpty
                   ? const Center(
                 child: Padding(
-                  padding: EdgeInsets.all(20),
+                  padding: EdgeInsets.all(18),
                   child: Text('Không tìm thấy nhà thuốc phù hợp'),
                 ),
               )
                   : ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
                 itemCount: _searchResults.length,
                 itemBuilder: (context, index) {
                   final p = _searchResults[index];
+
                   final distanceText = _myLocation == null
                       ? null
                       : _distanceInKm(
@@ -1463,8 +1615,8 @@ class _MapScreenState extends State<MapScreen> {
                   return ListTile(
                     dense: true,
                     leading: Container(
-                      width: 40,
-                      height: 40,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFE4EE),
                         borderRadius: BorderRadius.circular(12),
@@ -1472,7 +1624,7 @@ class _MapScreenState extends State<MapScreen> {
                       child: const Icon(
                         Icons.medication_rounded,
                         color: Color(0xFFE91E63),
-                        size: 20,
+                        size: 19,
                       ),
                     ),
                     title: Text(
@@ -1481,16 +1633,16 @@ class _MapScreenState extends State<MapScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 13.5,
                       ),
                     ),
                     subtitle: Text(
                       distanceText == null
                           ? p.address
-                          : '${p.address}\nCách ${distanceText} km',
+                          : '${p.address}\nCách $distanceText km',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 12),
                     ),
                     trailing: const Icon(Icons.chevron_right, size: 18),
                     onTap: () {
@@ -1507,7 +1659,20 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget _buildLoadingOverlay() {
+    return Container(
+      color: Colors.white,
+      child: const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFFE91E63),
+        ),
+      ),
+    );
+  }
+
   void _showMsg(String msg) {
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg)),
     );
@@ -1523,21 +1688,17 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        body: _buildLoadingOverlay(),
+      );
+    }
+
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(
-          'Bản đồ nhà thuốc - $_roleLabel',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.black87,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
+      body: Stack(
         children: [
           Positioned.fill(child: _buildMap()),
+
           if (_showToolPanel)
             Positioned.fill(
               child: GestureDetector(
@@ -1551,9 +1712,15 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
+
+          if (!_showSearchBar) _buildTopTitle(),
+
           if (_showSearchBar) _buildSearchBox(),
+
           if (!_showSearchBar) _buildTopRightControls(),
+
           _buildToolPanel(),
+
           if (_showSearchResults) _buildSearchResultPanel(),
         ],
       ),

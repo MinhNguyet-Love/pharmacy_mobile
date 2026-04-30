@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'package:dio/dio.dart';
+
 import '../models/pharmacy_model.dart';
 import 'api_service.dart';
 
@@ -32,7 +35,9 @@ class PharmacyService {
 
       return data.map((e) {
         final item = Map<String, dynamic>.from(e);
+
         return PharmacyModel(
+          id: int.tryParse(item['id']?.toString() ?? '0') ?? 0,
           name: item['name']?.toString() ?? '',
           address: item['address']?.toString() ?? '',
           province: item['province']?.toString() ?? '',
@@ -42,9 +47,13 @@ class PharmacyService {
           rating: item['rating'] == null
               ? null
               : double.tryParse(item['rating'].toString()),
-          image: item['image']?.toString() ?? '',
+          image: item['image']?.toString() ??
+              item['image_url']?.toString() ??
+              '',
           lng: double.tryParse(
-            item['lon']?.toString() ?? item['lng']?.toString() ?? '0',
+            item['lon']?.toString() ??
+                item['lng']?.toString() ??
+                '0',
           ) ??
               0,
           lat: double.tryParse(item['lat']?.toString() ?? '0') ?? 0,
@@ -72,7 +81,7 @@ class PharmacyService {
       );
 
       final data = response.data;
-      final features = (data['features'] as List<dynamic>? ?? []);
+      final features = data['features'] as List<dynamic>? ?? [];
 
       return features
           .map((e) => PharmacyModel.fromGeoJson(Map<String, dynamic>.from(e)))
@@ -112,6 +121,36 @@ class PharmacyService {
     } catch (e) {
       print('GET PROVINCE STATS ERROR: $e');
       return [];
+    }
+  }
+
+  Future<bool> updatePharmacy(
+      int id,
+      Map<String, dynamic> data, {
+        File? imageFile,
+      }) async {
+    try {
+      final formData = FormData.fromMap({
+        ...data,
+        if (imageFile != null)
+          'image': await MultipartFile.fromFile(
+            imageFile.path,
+            filename: imageFile.path.split('/').last,
+          ),
+      });
+
+      final response = await ApiService.dio.put(
+        '/pharmacies/$id',
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+        ),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('UPDATE PHARMACY ERROR: $e');
+      return false;
     }
   }
 }

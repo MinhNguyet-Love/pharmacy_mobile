@@ -1,4 +1,5 @@
 class PharmacyModel {
+  final int id;
   final String name;
   final String address;
   final String province;
@@ -11,6 +12,7 @@ class PharmacyModel {
   final double lng;
 
   PharmacyModel({
+    required this.id,
     required this.name,
     required this.address,
     required this.province,
@@ -29,6 +31,7 @@ class PharmacyModel {
     final coordinates = geometry['coordinates'] ?? [0.0, 0.0];
 
     return PharmacyModel(
+      id: int.tryParse(properties['id']?.toString() ?? '0') ?? 0,
       name: properties['name']?.toString() ?? '',
       address: properties['address']?.toString() ?? '',
       province: properties['province']?.toString() ?? '',
@@ -38,9 +41,11 @@ class PharmacyModel {
       rating: properties['rating'] == null
           ? null
           : double.tryParse(properties['rating'].toString()),
-      image: properties['image']?.toString() ?? '',
-      lng: (coordinates[0] as num).toDouble(),
-      lat: (coordinates[1] as num).toDouble(),
+      image: properties['image']?.toString() ??
+          properties['image_url']?.toString() ??
+          '',
+      lng: (coordinates[0] as num?)?.toDouble() ?? 0,
+      lat: (coordinates[1] as num?)?.toDouble() ?? 0,
     );
   }
 }

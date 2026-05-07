@@ -26,6 +26,7 @@ class ApiService {
           options.headers['Authorization'] = 'Bearer $token';
         }
 
+        print('🌐 API REQUEST: ${options.uri}');
         handler.next(options);
       },
     ),

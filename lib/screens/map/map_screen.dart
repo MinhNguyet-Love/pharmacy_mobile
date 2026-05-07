@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -6,7 +6,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_heatmap/flutter_map_heatmap.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -28,7 +27,6 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final PharmacyService _pharmacyService = PharmacyService();
   final MapController _mapController = MapController();
-  final ImagePicker _imagePicker = ImagePicker();
 
   List<String> _provinces = [];
   List<PharmacyModel> _allPharmacies = [];
@@ -45,12 +43,14 @@ class _MapScreenState extends State<MapScreen> {
   TextEditingController(text: '5');
 
   bool _isLoading = true;
+  bool _isViewportLoading = false;
   bool _showSearchBar = false;
   bool _showSearchResults = false;
   bool _showHeatmap = false;
   bool _sortNearest = true;
   bool _showToolPanel = false;
 
+  Timer? _moveDebounce;
   LatLng? _myLocation;
 
   final LatLng _defaultCenter = const LatLng(16.0544, 108.2022);
@@ -92,16 +92,32 @@ class _MapScreenState extends State<MapScreen> {
     _loadInitialData();
   }
 
+  List<PharmacyModel> _takeSpread(List<PharmacyModel> source, int maxCount) {
+    if (source.length <= maxCount) return source;
+
+    final result = <PharmacyModel>[];
+    final step = source.length / maxCount;
+
+    for (int i = 0; i < maxCount; i++) {
+      final index = (i * step).floor();
+      result.add(source[index]);
+    }
+
+    return result;
+  }
+
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
 
     try {
       final provinces = await _pharmacyService.getProvinces();
 
-      const bbox = '102.0,8.0,110.5,24.5';
+      const vietnamBbox = '102.0,8.0,110.5,24.5';
 
       final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
-        bbox: bbox,
+        bbox: vietnamBbox,
+        limit: 1200,
+        mode: 'overview',
       );
 
       if (!mounted) return;
@@ -125,7 +141,61 @@ class _MapScreenState extends State<MapScreen> {
       _showMsg('Không tải được dữ liệu bản đồ. Kiểm tra backend/API.');
     }
   }
+  Future<void> _loadPharmaciesByViewport() async {
+    if (_isViewportLoading) return;
 
+    final zoom = _mapController.camera.zoom;
+
+    // zoom thấp thì giữ marker overview
+    if (zoom < 8) {
+      return;
+    }
+
+    try {
+      _isViewportLoading = true;
+
+      final bounds = _mapController.camera.visibleBounds;
+
+      final bbox =
+          '${bounds.west},${bounds.south},${bounds.east},${bounds.north}';
+
+      int limit;
+
+      if (zoom < 10) {
+        limit = 500;
+      } else if (zoom < 13) {
+        limit = 800;
+      } else if (zoom < 15) {
+        limit = 1000;
+      } else {
+        limit = 1200;
+      }
+
+      final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
+        bbox: bbox,
+        province: _selectedProvince,
+        ratingMin: double.tryParse(_ratingController.text.trim()),
+        limit: limit,
+      );
+
+      if (!mounted) return;
+
+      final valid = pharmacies.where((p) {
+        return p.id > 0 &&
+            p.lat != 0 &&
+            p.lng != 0;
+      }).toList();
+
+      setState(() {
+        _allPharmacies = valid;
+        _pharmacies = valid;
+      });
+    } catch (e) {
+      print('LOAD VIEWPORT ERROR: $e');
+    } finally {
+      _isViewportLoading = false;
+    }
+  }
   Future<void> _applyFilter() async {
     Navigator.pop(context);
     setState(() => _isLoading = true);
@@ -135,11 +205,13 @@ class _MapScreenState extends State<MapScreen> {
 
       const bbox = '102.0,8.0,110.5,24.5';
 
-      final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
+      final pharmaciesRaw = await _pharmacyService.getPharmaciesGeoJson(
         bbox: bbox,
         province: _selectedProvince,
         ratingMin: ratingMin,
       );
+
+      final pharmacies = _takeSpread(pharmaciesRaw, 5000);
 
       if (!mounted) return;
 
@@ -290,12 +362,31 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _filterNearby() async {
     if (_myLocation == null) {
       await _getMyLocation();
+
       if (_myLocation == null) return;
     }
 
-    final radiusKm = double.tryParse(_radiusController.text.trim()) ?? 5;
+    final radiusKm =
+        double.tryParse(_radiusController.text.trim()) ?? 5;
 
-    final filtered = _allPharmacies.where((p) {
+    final radiusDegree = radiusKm / 111.0;
+
+    final bbox =
+        '${_myLocation!.longitude - radiusDegree},'
+        '${_myLocation!.latitude - radiusDegree},'
+        '${_myLocation!.longitude + radiusDegree},'
+        '${_myLocation!.latitude + radiusDegree}';
+
+    final candidates =
+    await _pharmacyService.getPharmaciesGeoJson(
+      bbox: bbox,
+      province: _selectedProvince,
+      ratingMin:
+      double.tryParse(_ratingController.text.trim()),
+      limit: 3000,
+    );
+
+    final filtered = candidates.where((p) {
       if (p.lat == 0 || p.lng == 0) return false;
 
       final d = _distanceInKm(
@@ -308,10 +399,21 @@ class _MapScreenState extends State<MapScreen> {
 
     if (_sortNearest) {
       filtered.sort((a, b) {
-        final da = _distanceInKm(_myLocation!, LatLng(a.lat, a.lng));
-        final db = _distanceInKm(_myLocation!, LatLng(b.lat, b.lng));
+        final da =
+        _distanceInKm(_myLocation!, LatLng(a.lat, a.lng));
+
+        final db =
+        _distanceInKm(_myLocation!, LatLng(b.lat, b.lng));
+
         return da.compareTo(db);
       });
+    }
+
+    if (filtered.isEmpty) {
+      _showMsg(
+        'Không có nhà thuốc nào trong bán kính $radiusKm km',
+      );
+      return;
     }
 
     setState(() {
@@ -322,13 +424,11 @@ class _MapScreenState extends State<MapScreen> {
       _showToolPanel = false;
     });
 
-    _fitMapToMarkers(_pharmacies);
+    _fitMapToMarkers(filtered);
 
-    if (filtered.isEmpty) {
-      _showMsg('Không có nhà thuốc nào trong bán kính $radiusKm km');
-    } else {
-      _showMsg('Đã lọc ${filtered.length} nhà thuốc trong bán kính $radiusKm km');
-    }
+    _showMsg(
+      'Đã tìm thấy ${filtered.length} nhà thuốc gần bạn',
+    );
   }
 
   Future<void> _toggleHeatmap() async {
@@ -345,7 +445,8 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     try {
-      final ratingMin = double.tryParse(_ratingController.text.trim());
+      final ratingMin =
+      double.tryParse(_ratingController.text.trim());
 
       final heatData = await _pharmacyService.getHeatmap(
         province: _selectedProvince,
@@ -354,12 +455,11 @@ class _MapScreenState extends State<MapScreen> {
 
       final points = heatData.map((e) {
         final lat = (e['lat'] as num).toDouble();
-        final lon = (e['lon'] as num).toDouble();
-        final weight = e['w'] == null ? 1.0 : (e['w'] as num).toDouble();
+        final lng = (e['lng'] as num).toDouble();
 
         return WeightedLatLng(
-          LatLng(lat, lon),
-          weight,
+          LatLng(lat, lng),
+          1.0,
         );
       }).toList();
 
@@ -369,10 +469,13 @@ class _MapScreenState extends State<MapScreen> {
         _showToolPanel = false;
       });
     } catch (e) {
-      _showMsg('Không tải được heatmap. Kiểm tra API /heat.');
+      print('HEATMAP ERROR: $e');
+
+      _showMsg(
+        'Không tải được heatmap. Kiểm tra API /heat.',
+      );
     }
   }
-
   Future<void> _showProvinceStatsDialog() async {
     if (!_canViewAdvancedFeatures) {
       _showMsg('Chỉ company hoặc admin mới xem được thống kê');
@@ -574,6 +677,42 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _startFieldSurvey(PharmacyModel pharmacy) async {
+    if (!_canEdit) {
+      _showMsg('Chỉ company hoặc admin mới được khảo sát thực địa');
+      return;
+    }
+
+    if (_myLocation == null) {
+      await _getMyLocation();
+    }
+
+    if (_myLocation == null) {
+      _showMsg('Bạn cần bật GPS để khảo sát thực địa');
+      return;
+    }
+
+    final distanceKm = _distanceInKm(
+      _myLocation!,
+      LatLng(pharmacy.lat, pharmacy.lng),
+    );
+
+    final distanceM = distanceKm * 1000;
+
+    if (distanceM > 20) {
+      _showMsg(
+        'Bạn chưa tới đúng nhà thuốc. Khoảng cách hiện tại: ${distanceM.toStringAsFixed(1)}m',
+      );
+      return;
+    }
+
+    _showMsg(
+      'Bạn đã tới ${pharmacy.name}, được phép chỉnh sửa thông tin',
+    );
+
+    _openEditPharmacySheet(pharmacy);
+  }
+
   void _showPharmacyBottomSheet(PharmacyModel pharmacy) {
     final distanceText = _myLocation == null
         ? null
@@ -655,6 +794,12 @@ class _MapScreenState extends State<MapScreen> {
                   'Trạng thái',
                   pharmacy.status.isEmpty ? 'Không có' : pharmacy.status,
                 ),
+                if (pharmacy.productGroups.isNotEmpty)
+                  _detailItem(
+                    Icons.category_outlined,
+                    'Nhóm sản phẩm',
+                    pharmacy.productGroups.join(', '),
+                  ),
                 if (distanceText != null)
                   _detailItem(
                     Icons.near_me_outlined,
@@ -687,9 +832,9 @@ class _MapScreenState extends State<MapScreen> {
                     width: double.infinity,
                     height: 52,
                     child: OutlinedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(context);
-                        _openEditPharmacySheet(pharmacy);
+                        await _startFieldSurvey(pharmacy);
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFE91E63),
@@ -698,9 +843,9 @@ class _MapScreenState extends State<MapScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      icon: const Icon(Icons.edit),
+                      icon: const Icon(Icons.fact_check),
                       label: const Text(
-                        'Cập nhật thông tin nhà thuốc',
+                        'Khảo sát thực địa',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -724,7 +869,30 @@ class _MapScreenState extends State<MapScreen> {
     final ratingController =
     TextEditingController(text: pharmacy.rating?.toString() ?? '');
 
-    File? selectedImage;
+    final imageController = TextEditingController(
+      text: pharmacy.imageUrl,
+    );
+
+    final List<String> productOptions = [
+      'Thuốc kê đơn',
+      'Thuốc không kê đơn',
+      'Thực phẩm chức năng',
+      'Dược mỹ phẩm',
+      'Thiết bị y tế',
+      'Vitamin',
+      'Sữa / dinh dưỡng',
+      'Mẹ và bé',
+    ];
+
+    for (final item in pharmacy.productGroups) {
+      if (!productOptions.contains(item)) {
+        productOptions.add(item);
+      }
+    }
+
+    List<String> selectedProducts = List<String>.from(pharmacy.productGroups);
+    final productController = TextEditingController();
+
     bool saving = false;
 
     showModalBottomSheet(
@@ -738,55 +906,51 @@ class _MapScreenState extends State<MapScreen> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            Future<void> pickImage(ImageSource source) async {
-              try {
-                final picked = await _imagePicker.pickImage(
-                  source: source,
-                  imageQuality: 75,
-                  maxWidth: 1600,
-                );
-
-                if (picked != null) {
-                  setSheetState(() {
-                    selectedImage = File(picked.path);
-                  });
-                }
-              } catch (e) {
-                _showMsg('Không chọn/chụp được ảnh');
-              }
-            }
-
             Future<void> saveUpdate() async {
               if (saving) return;
 
+              if (_myLocation == null) {
+                await _getMyLocation();
+              }
+
+              if (_myLocation == null) {
+                _showMsg('Bạn cần bật GPS trước khi lưu khảo sát');
+                return;
+              }
+
               setSheetState(() => saving = true);
 
-              final updatedData = {
-                'name': nameController.text.trim(),
-                'address': addressController.text.trim(),
-                'province': provinceController.text.trim(),
-                'district': districtController.text.trim(),
-                'phone': phoneController.text.trim(),
-                'status': statusController.text.trim(),
-                'rating': double.tryParse(ratingController.text.trim()),
-              };
+              try {
+                final updated = await _pharmacyService.updatePharmacy(
+                  id: pharmacy.id,
+                  name: nameController.text.trim(),
+                  address: addressController.text.trim(),
+                  phone: phoneController.text.trim(),
+                  status: statusController.text.trim(),
+                  rating: double.tryParse(
+                    ratingController.text.trim(),
+                  ),
+                  imageUrl: imageController.text.trim(),
+                  productGroups: selectedProducts,
+                );
 
-              final success = await _pharmacyService.updatePharmacy(
-                pharmacy.id,
-                updatedData,
-                imageFile: selectedImage,
-              );
+                if (!mounted) return;
 
-              if (!mounted) return;
+                setSheetState(() => saving = false);
 
-              setSheetState(() => saving = false);
+                if (updated != null) {
+                  Navigator.pop(context);
 
-              if (success) {
-                Navigator.pop(context);
-                _showMsg('Cập nhật nhà thuốc thành công');
-                await _loadInitialData();
-              } else {
-                _showMsg('Cập nhật thất bại. Kiểm tra backend/API.');
+                  _showMsg('Cập nhật nhà thuốc thành công');
+
+                  await _loadPharmaciesByViewport();
+                } else {
+                  _showMsg('Cập nhật thất bại');
+                }
+              } catch (e) {
+                setSheetState(() => saving = false);
+
+                _showMsg('Lỗi cập nhật: $e');
               }
             }
 
@@ -821,54 +985,80 @@ class _MapScreenState extends State<MapScreen> {
                       keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                     ),
-                    const SizedBox(height: 14),
+                    _editField(
+                      'URL ảnh nhà thuốc',
+                      imageController,
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 8),
                     const Text(
-                      'Hình ảnh nhà thuốc',
+                      'Nhóm sản phẩm nhà thuốc bán',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    const SizedBox(height: 10),
-                    if (selectedImage != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.file(
-                          selectedImage!,
-                          height: 160,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    else
-                      Container(
-                        height: 120,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Center(
-                          child: Text('Chưa chọn ảnh'),
-                        ),
-                      ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: productOptions.map((product) {
+                        final checked = selectedProducts.contains(product);
+
+                        return FilterChip(
+                          label: Text(product),
+                          selected: checked,
+                          selectedColor: const Color(0xFFFFD6E7),
+                          checkmarkColor: const Color(0xFFE91E63),
+                          onSelected: (value) {
+                            setSheetState(() {
+                              if (value) {
+                                selectedProducts.add(product);
+                              } else {
+                                selectedProducts.remove(product);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: saving
-                                ? null
-                                : () => pickImage(ImageSource.gallery),
-                            icon: const Icon(Icons.photo_library),
-                            label: const Text('Chọn ảnh'),
+                          child: TextField(
+                            controller: productController,
+                            decoration: InputDecoration(
+                              hintText: 'Thêm nhóm sản phẩm mới',
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed:
-                            saving ? null : () => pickImage(ImageSource.camera),
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text('Chụp ảnh'),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            final text = productController.text.trim();
+                            if (text.isEmpty) return;
+
+                            setSheetState(() {
+                              if (!productOptions.contains(text)) {
+                                productOptions.add(text);
+                              }
+
+                              if (!selectedProducts.contains(text)) {
+                                selectedProducts.add(text);
+                              }
+
+                              productController.clear();
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE91E63),
+                            foregroundColor: Colors.white,
                           ),
+                          child: const Text('Thêm'),
                         ),
                       ],
                     ),
@@ -1118,12 +1308,15 @@ class _MapScreenState extends State<MapScreen> {
       return p.lat != 0 && p.lng != 0;
     }).toList();
 
+
+
     final markers = validPharmacies.map((pharmacy) {
       return Marker(
         point: LatLng(pharmacy.lat, pharmacy.lng),
-        width: 24,
-        height: 17,
+        width: 36,
+        height: 36,
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () {
             _moveToPharmacy(pharmacy);
             _showPharmacyBottomSheet(pharmacy);
@@ -1134,7 +1327,8 @@ class _MapScreenState extends State<MapScreen> {
     }).toList();
 
     if (_myLocation != null) {
-      markers.add(
+      markers.insert(
+        0,
         Marker(
           point: _myLocation!,
           width: 30,
@@ -1188,7 +1382,7 @@ class _MapScreenState extends State<MapScreen> {
         child: Icon(
           Icons.medication_rounded,
           color: Colors.white,
-          size: 10,
+          size: 16,
         ),
       ),
     );
@@ -1205,68 +1399,93 @@ class _MapScreenState extends State<MapScreen> {
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
         ),
+        onPositionChanged: (position, hasGesture) {
+          if (!hasGesture) return;
+
+          _moveDebounce?.cancel();
+
+          _moveDebounce = Timer(
+            const Duration(milliseconds: 1800),
+                () {
+              _loadPharmaciesByViewport();
+            },
+          );
+        },
       ),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.pharmacy_mobile',
-          panBuffer: 1,
+          tileDisplay: const TileDisplay.fadeIn(),
+          panBuffer: 0,
+          keepBuffer: 1,
           maxNativeZoom: 19,
         ),
+
         if (_showHeatmap && _heatPoints.isNotEmpty)
           HeatMapLayer(
-            heatMapDataSource: InMemoryHeatMapDataSource(data: _heatPoints),
+            heatMapDataSource: InMemoryHeatMapDataSource(
+              data: _heatPoints,
+            ),
             heatMapOptions: HeatMapOptions(
               minOpacity: 0.3,
               radius: 18,
             ),
           ),
-        MarkerClusterLayerWidget(
-          options: MarkerClusterLayerOptions(
-            maxClusterRadius: 90,
-            disableClusteringAtZoom: 16,
-            size: const Size(34, 34),
-            alignment: Alignment.center,
-            padding: const EdgeInsets.all(120),
-            markers: _buildMarkers(),
-            builder: (context, markers) {
-              return Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFFE91E63), Color(0xFFF06292)],
-                  ),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x22000000),
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Text(
-                    markers.length.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 9.5,
-                    ),
-                  ),
-                ),
-              );
-            },
-            onClusterTap: (cluster) {
-              final nextZoom = min(
-                _mapController.camera.zoom + 2,
-                17.0,
-              );
 
-              _mapController.move(
-                cluster.bounds.center,
-                nextZoom,
-              );
-            },
+        RepaintBoundary(
+          child: MarkerClusterLayerWidget(
+            options: MarkerClusterLayerOptions(
+              maxClusterRadius: 120,
+              disableClusteringAtZoom: 17,
+              size: const Size(34, 34),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.all(60),
+              markers: _buildMarkers(),
+
+              builder: (context, markers) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFFE91E63),
+                        Color(0xFFF06292),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x22000000),
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      markers.length.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 9.5,
+                      ),
+                    ),
+                  ),
+                );
+              },
+
+              onClusterTap: (cluster) async {
+                final nextZoom = min(
+                  _mapController.camera.zoom + 1.5,
+                  16.0,
+                );
+
+                _mapController.move(
+                  cluster.bounds.center,
+                  nextZoom,
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -1726,25 +1945,6 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                       ),
                     ],
-                    if (_isAdmin) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'Admin có thể mở rộng thêm màn quản lý users và pharmacies.',
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.all(10),
@@ -1948,6 +2148,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    _moveDebounce?.cancel();
     _ratingController.dispose();
     _searchController.dispose();
     _radiusController.dispose();
@@ -1966,7 +2167,6 @@ class _MapScreenState extends State<MapScreen> {
       body: Stack(
         children: [
           Positioned.fill(child: _buildMap()),
-
           if (_showToolPanel)
             Positioned.fill(
               child: GestureDetector(
@@ -1980,16 +2180,11 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
-
           if (!_showSearchBar) _buildBackButton(),
           if (!_showSearchBar) _buildTopTitle(),
-
           if (_showSearchBar) _buildSearchBox(),
-
           if (!_showSearchBar) _buildTopRightControls(),
-
           _buildToolPanel(),
-
           if (_showSearchResults) _buildSearchResultPanel(),
         ],
       ),

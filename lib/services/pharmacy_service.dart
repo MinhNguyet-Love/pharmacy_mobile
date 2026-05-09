@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 
 import '../models/pharmacy_model.dart';
@@ -7,7 +9,6 @@ class PharmacyService {
   Future<List<String>> getProvinces() async {
     try {
       final response = await ApiService.dio.get('/provinces');
-
       final data = response.data;
 
       if (data is List) {
@@ -21,27 +22,19 @@ class PharmacyService {
     }
   }
 
-  Future<List<PharmacyModel>> getOverviewPharmacies({
-    int limit = 5000,
-  }) async {
+  Future<int> getPharmacyCount() async {
     try {
-      final response = await ApiService.dio.get(
-        '/pharmacies.geojson',
-        queryParameters: {
-          'mode': 'overview',
-          'limit': limit,
-        },
-      );
+      final response = await ApiService.dio.get('/pharmacies/count');
+      final data = response.data;
 
-      return _parseGeoJsonResponse(response.data);
-    } on DioException catch (e) {
-      print('GET OVERVIEW PHARMACIES DIO ERROR: ${e.message}');
-      print('STATUS: ${e.response?.statusCode}');
-      print('DATA: ${e.response?.data}');
-      return [];
+      if (data is Map && data['total'] != null) {
+        return int.tryParse(data['total'].toString()) ?? 0;
+      }
+
+      return 0;
     } catch (e) {
-      print('GET OVERVIEW PHARMACIES ERROR: $e');
-      return [];
+      print('GET PHARMACY COUNT ERROR: $e');
+      return 0;
     }
   }
 
@@ -57,33 +50,19 @@ class PharmacyService {
     try {
       final query = <String, dynamic>{};
 
-      if (bbox != null && bbox.isNotEmpty) {
-        query['bbox'] = bbox;
-      }
-
-      if (mode != null && mode.isNotEmpty) {
-        query['mode'] = mode;
-      }
-
+      if (bbox != null && bbox.trim().isNotEmpty) query['bbox'] = bbox;
+      if (mode != null && mode.trim().isNotEmpty) query['mode'] = mode;
       if (search != null && search.trim().isNotEmpty) {
         query['search'] = search.trim();
       }
-
       if (province != null && province.trim().isNotEmpty) {
         query['province'] = province.trim();
       }
-
       if (district != null && district.trim().isNotEmpty) {
         query['district'] = district.trim();
       }
-
-      if (ratingMin != null) {
-        query['rating_min'] = ratingMin;
-      }
-
-      if (limit != null && limit > 0) {
-        query['limit'] = limit;
-      }
+      if (ratingMin != null) query['rating_min'] = ratingMin;
+      if (limit != null && limit > 0) query['limit'] = limit;
 
       final response = await ApiService.dio.get(
         '/pharmacies.geojson',
@@ -117,16 +96,13 @@ class PharmacyService {
         query['province'] = province.trim();
       }
 
-      if (ratingMin != null) {
-        query['rating_min'] = ratingMin;
-      }
+      if (ratingMin != null) query['rating_min'] = ratingMin;
 
       if (minLng != null &&
           minLat != null &&
           maxLng != null &&
           maxLat != null) {
-        query['bbox'] =
-        '$minLng,$minLat,$maxLng,$maxLat';
+        query['bbox'] = '$minLng,$minLat,$maxLng,$maxLat';
       }
 
       final response = await ApiService.dio.get(
@@ -144,11 +120,6 @@ class PharmacyService {
       }
 
       return [];
-    } on DioException catch (e) {
-      print('GET HEATMAP DIO ERROR: ${e.message}');
-      print('STATUS: ${e.response?.statusCode}');
-      print('DATA: ${e.response?.data}');
-      return [];
     } catch (e) {
       print('GET HEATMAP ERROR: $e');
       return [];
@@ -157,9 +128,7 @@ class PharmacyService {
 
   Future<List<Map<String, dynamic>>> getProvinceStats() async {
     try {
-      final response =
-      await ApiService.dio.get('/stats/province');
-
+      final response = await ApiService.dio.get('/stats/province');
       final data = response.data;
 
       if (data is List) {
@@ -176,10 +145,41 @@ class PharmacyService {
     }
   }
 
+  Future<String?> uploadPharmacyImage(File imageFile) async {
+    try {
+      final fileName = imageFile.path.split('/').last;
+
+      final formData = FormData.fromMap({
+        'image': await MultipartFile.fromFile(
+          imageFile.path,
+          filename: fileName,
+        ),
+      });
+
+      final response = await ApiService.dio.post(
+        '/upload-image',
+        data: formData,
+      );
+
+      final data = response.data;
+
+      if (data is Map && data['image_url'] != null) {
+        return data['image_url'].toString();
+      }
+
+      return null;
+    } catch (e) {
+      print('UPLOAD IMAGE ERROR: $e');
+      return null;
+    }
+  }
+
   Future<PharmacyModel?> updatePharmacy({
     required int id,
     String? name,
     String? address,
+    String? province,
+    String? district,
     String? phone,
     String? status,
     double? rating,
@@ -194,6 +194,8 @@ class PharmacyService {
         data: {
           'name': name,
           'address': address,
+          'province': province,
+          'district': district,
           'phone': phone,
           'status': status,
           'rating': rating,
@@ -218,14 +220,8 @@ class PharmacyService {
 
       return null;
     } on DioException catch (e) {
-      print(
-        'UPDATE PHARMACY DIO ERROR STATUS: ${e.response?.statusCode}',
-      );
-
-      print(
-        'UPDATE PHARMACY DIO ERROR DATA: ${e.response?.data}',
-      );
-
+      print('UPDATE PHARMACY DIO ERROR STATUS: ${e.response?.statusCode}');
+      print('UPDATE PHARMACY DIO ERROR DATA: ${e.response?.data}');
       return null;
     } catch (e) {
       print('UPDATE PHARMACY ERROR: $e');

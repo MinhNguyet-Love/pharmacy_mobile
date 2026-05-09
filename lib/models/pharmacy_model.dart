@@ -47,7 +47,7 @@ class PharmacyModel {
       rating: _toDoubleNullable(properties['rating']),
       imageUrl: properties['image_url']?.toString() ?? '',
       productGroups: _toStringList(properties['product_groups']),
-      isSurveyed: properties['is_surveyed'] == true,
+      isSurveyed: _toBool(properties['is_surveyed']),
       surveyedAt: properties['surveyed_at']?.toString(),
       lat: coordinates.length > 1 ? _toDouble(coordinates[1]) : 0.0,
       lng: coordinates.isNotEmpty ? _toDouble(coordinates[0]) : 0.0,
@@ -66,7 +66,7 @@ class PharmacyModel {
       rating: _toDoubleNullable(json['rating']),
       imageUrl: json['image_url']?.toString() ?? '',
       productGroups: _toStringList(json['product_groups']),
-      isSurveyed: json['is_surveyed'] == true,
+      isSurveyed: _toBool(json['is_surveyed']),
       surveyedAt: json['surveyed_at']?.toString(),
       lat: _toDouble(json['lat']),
       lng: _toDouble(json['lng']),
@@ -77,6 +77,8 @@ class PharmacyModel {
     return {
       'name': name,
       'address': address,
+      'province': province,
+      'district': district,
       'phone': phone,
       'status': status,
       'rating': rating,
@@ -135,6 +137,15 @@ class PharmacyModel {
     if (value == null || value.toString().isEmpty) return null;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString());
+  }
+
+  static bool _toBool(dynamic value) {
+    if (value == true) return true;
+    if (value == false) return false;
+
+    final text = value?.toString().toLowerCase().trim();
+
+    return text == 'true' || text == '1' || text == 'yes';
   }
 
   static List<String> _toStringList(dynamic value) {

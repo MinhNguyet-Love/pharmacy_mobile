@@ -116,7 +116,7 @@ class _MapScreenState extends State<MapScreen> {
         _pharmacyService.getPharmacyCount(),
         _pharmacyService.getPharmaciesGeoJson(
           bbox: '102.0,8.0,110.5,24.5',
-          limit: 5000,
+          limit: 9000,
           mode: 'overview',
         ),
       ]);
@@ -156,7 +156,7 @@ class _MapScreenState extends State<MapScreen> {
 
       final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
         bbox: '102.0,8.0,110.5,24.5',
-        limit: 5000,
+        limit: 9000,
         mode: 'overview',
         ratingMin: double.tryParse(_ratingController.text.trim()),
       );
@@ -1494,7 +1494,7 @@ class _MapScreenState extends State<MapScreen> {
 
           _moveDebounce?.cancel();
           _moveDebounce = Timer(
-            const Duration(milliseconds: 1000),
+            const Duration(milliseconds: 900),
                 () {
               _loadPharmaciesByViewport();
             },
@@ -1769,11 +1769,11 @@ class _MapScreenState extends State<MapScreen> {
       left: 12,
       top: MediaQuery.of(context).padding.top + 82,
       child: AnimatedSlide(
-        duration: const Duration(milliseconds: 220),
+        duration: const Duration(milliseconds: 210),
         curve: Curves.easeOut,
         offset: _showToolPanel ? Offset.zero : const Offset(-1.05, 0),
         child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 170),
           opacity: _showToolPanel ? 1 : 0,
           child: IgnorePointer(
             ignoring: !_showToolPanel,

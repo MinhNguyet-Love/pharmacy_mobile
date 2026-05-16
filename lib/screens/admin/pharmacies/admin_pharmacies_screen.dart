@@ -598,6 +598,7 @@ class _AdminPharmaciesScreenState extends State<AdminPharmaciesScreen> {
     return Container(width: double.infinity, margin: const EdgeInsets.only(bottom: 9), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14)), child: Text('$title: ${text.isEmpty ? 'Không có' : text}'));
   }
 
+
   void _openEditSheet(Map<String, dynamic> p) {
     final id = int.tryParse(p['id'].toString()) ?? 0;
     final name = TextEditingController(text: p['name']?.toString() ?? '');
@@ -661,7 +662,230 @@ class _AdminPharmaciesScreenState extends State<AdminPharmaciesScreen> {
       }),
     );
   }
+  void _openCreateSheet() {
+    final name = TextEditingController();
+    final address = TextEditingController();
+    final province = TextEditingController();
+    final district = TextEditingController();
+    final phone = TextEditingController();
+    final status = TextEditingController(
+      text: 'Đang hoạt động',
+    );
+    final rating = TextEditingController(
+      text: '5',
+    );
+    final image = TextEditingController();
+    final latitude = TextEditingController();
+    final longitude = TextEditingController();
 
+    bool saving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          Future<void> save() async {
+            if (saving) return;
+
+            if (name.text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Vui lòng nhập tên nhà thuốc',
+                  ),
+                ),
+              );
+              return;
+            }
+
+            final lat = double.tryParse(
+              latitude.text.trim(),
+            );
+
+            final lng = double.tryParse(
+              longitude.text.trim(),
+            );
+
+            if (lat == null || lng == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Latitude/Longitude không hợp lệ',
+                  ),
+                ),
+              );
+              return;
+            }
+
+            setSheetState(() => saving = true);
+
+            final ok =
+            await _adminService.createAdminPharmacy(
+              name: name.text.trim(),
+              address: address.text.trim(),
+              province: province.text.trim(),
+              district: district.text.trim(),
+              phone: phone.text.trim(),
+              status: status.text.trim(),
+              rating: double.tryParse(
+                rating.text.trim(),
+              ),
+              latitude: lat,
+              longitude: lng,
+              image: image.text.trim(),
+            );
+
+            if (!mounted) return;
+
+            setSheetState(() => saving = false);
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  ok
+                      ? 'Đã thêm nhà thuốc'
+                      : 'Thêm nhà thuốc thất bại',
+                ),
+              ),
+            );
+
+            if (ok) {
+              Navigator.pop(context);
+
+              _loadPharmacies(
+                page: 1,
+              );
+            }
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              MediaQuery.of(context)
+                  .viewInsets
+                  .bottom +
+                  18,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  const Text(
+                    'Thêm nhà thuốc',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight:
+                      FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  _field(
+                    'Tên nhà thuốc',
+                    name,
+                  ),
+
+                  _field(
+                    'Địa chỉ',
+                    address,
+                    maxLines: 2,
+                  ),
+
+                  _field(
+                    'Tỉnh / Thành phố',
+                    province,
+                  ),
+
+                  _field(
+                    'Quận / Huyện',
+                    district,
+                  ),
+
+                  _field(
+                    'Số điện thoại',
+                    phone,
+                  ),
+
+                  _field(
+                    'Trạng thái',
+                    status,
+                  ),
+
+                  _field(
+                    'Rating',
+                    rating,
+                    keyboardType:
+                    const TextInputType
+                        .numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+
+                  _field(
+                    'Latitude',
+                    latitude,
+                    keyboardType:
+                    const TextInputType
+                        .numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+
+                  _field(
+                    'Longitude',
+                    longitude,
+                    keyboardType:
+                    const TextInputType
+                        .numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+
+                  _field(
+                    'Image URL',
+                    image,
+                    maxLines: 2,
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child:
+                    ElevatedButton.icon(
+                      onPressed:
+                      saving ? null : save,
+                      icon: saving
+                          ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child:
+                        CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                          : const Icon(
+                        Icons.add,
+                      ),
+                      label: Text(
+                        saving
+                            ? 'Đang thêm...'
+                            : 'Thêm nhà thuốc',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
   Widget _field(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -677,7 +901,19 @@ class _AdminPharmaciesScreenState extends State<AdminPharmaciesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Quản lý Nhà thuốc'), actions: [IconButton(onPressed: () => _loadPharmacies(), icon: const Icon(Icons.refresh))]),
+      appBar: AppBar(
+        title: const Text('Quản lý Nhà thuốc'),
+        actions: [
+          IconButton(
+            onPressed: _openCreateSheet,
+            icon: const Icon(Icons.add),
+          ),
+          IconButton(
+            onPressed: () => _loadPharmacies(),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: Column(children: [
         _FilterBox(),
         Expanded(
@@ -723,7 +959,12 @@ class _AdminPharmaciesScreenState extends State<AdminPharmaciesScreen> {
         if (!_loading) Container(padding: const EdgeInsets.all(10), color: Colors.white, child: Row(children: [
           ElevatedButton(onPressed: _page > 1 ? () => _loadPharmacies(page: _page - 1) : null, child: const Text('Trước')),
           Expanded(child: Center(child: Text('Trang $_page / $_totalPages - Tổng $_total'))),
-          ElevatedButton(onPressed: _page < _totalPages ? () => _loadPharmacies(page: _page + 1) : null, child: const Text('Sau')),
+          ElevatedButton(
+            onPressed: _page < _totalPages
+                ? () => _loadPharmacies(page: _page + 1)
+                : null,
+            child: const Text('Sau'),
+          ),
         ])),
       ]),
     );

@@ -13,6 +13,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/pharmacy_model.dart';
 import '../../services/pharmacy_service.dart';
+import '../../services/admin_service.dart';
+import '../../services/survey_area_service.dart';
 
 class MapScreen extends StatefulWidget {
   final String role;
@@ -28,6 +30,10 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final PharmacyService _pharmacyService = PharmacyService();
+
+  final AdminService _adminService = AdminService();
+  final SurveyAreaService _surveyAreaService = SurveyAreaService();
+
   final MapController _mapController = MapController();
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -53,6 +59,10 @@ class _MapScreenState extends State<MapScreen> {
   bool _showHeatmap = false;
   bool _sortNearest = true;
   bool _showToolPanel = false;
+  bool _isPickingArea = false;
+  bool _isAreaFiltered = false;
+
+  List<LatLng> _areaPoints = [];
 
   Timer? _moveDebounce;
   LatLng? _myLocation;
@@ -116,7 +126,7 @@ class _MapScreenState extends State<MapScreen> {
         _pharmacyService.getPharmacyCount(),
         _pharmacyService.getPharmaciesGeoJson(
           bbox: '102.0,8.0,110.5,24.5',
-          limit: 9000,
+          limit: 8000,
           mode: 'overview',
         ),
       ]);
@@ -156,7 +166,7 @@ class _MapScreenState extends State<MapScreen> {
 
       final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
         bbox: '102.0,8.0,110.5,24.5',
-        limit: 9000,
+        limit: 8000,
         mode: 'overview',
         ratingMin: double.tryParse(_ratingController.text.trim()),
       );
@@ -194,13 +204,13 @@ class _MapScreenState extends State<MapScreen> {
 
       int limit;
       if (zoom < 10) {
-        limit = 3800;
-      } else if (zoom < 13) {
-        limit = 4000;
-      } else if (zoom < 15) {
         limit = 5000;
+      } else if (zoom < 13) {
+        limit = 6500;
+      } else if (zoom < 15) {
+        limit = 8000;
       } else {
-        limit = 6000;
+        limit = 9000;
       }
 
       final pharmacies = await _pharmacyService.getPharmaciesGeoJson(
@@ -238,7 +248,7 @@ class _MapScreenState extends State<MapScreen> {
         bbox: '102.0,8.0,110.5,24.5',
         province: _selectedProvince,
         ratingMin: ratingMin,
-        limit: 6000,
+        limit: 8000,
         mode: _selectedProvince == null ? 'overview' : null,
       );
 
@@ -408,7 +418,7 @@ class _MapScreenState extends State<MapScreen> {
       bbox: bbox,
       province: _selectedProvince,
       ratingMin: double.tryParse(_ratingController.text.trim()),
-      limit: 3000,
+      limit: 8000,
     );
 
     final filtered = candidates.where((p) {
@@ -593,12 +603,170 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _exportCsv() async {
+    print('CLICK EXPORT CSV');
+
     if (!_canExport) {
       _showMsg('Chỉ company hoặc admin mới được export CSV');
       return;
     }
 
-    _showMsg('Backend đã có route export. Bước sau nối tải CSV cho Flutter.');
+    try {
+      setState(() {
+        _showToolPanel = false;
+      });
+
+      _showMsg('Đang xuất CSV...');
+
+      final ok = await _adminService.exportCsv();
+
+      if (!mounted) return;
+
+      if (ok) {
+        _showMsg('Xuất CSV thành công');
+      } else {
+        _showMsg('Xuất CSV thất bại');
+      }
+    } catch (e) {
+      print('EXPORT CSV UI ERROR: $e');
+
+      if (!mounted) return;
+
+      _showMsg('Lỗi export CSV');
+    }
+  }
+  void _startPickArea() {
+    setState(() {
+      _isPickingArea = true;
+      _isAreaFiltered = false;
+      _showToolPanel = false;
+      _areaPoints = [];
+    });
+
+    _showMsg('Chạm lên bản đồ để chọn các điểm tạo vùng');
+  }
+
+  void _undoAreaPoint() {
+    if (_areaPoints.isEmpty) {
+      _showMsg('Chưa có điểm nào');
+      return;
+    }
+
+    setState(() {
+      _areaPoints.removeLast();
+    });
+  }
+
+  void _clearArea() {
+    setState(() {
+      _isPickingArea = false;
+      _isAreaFiltered = false;
+      _areaPoints = [];
+      _pharmacies = _allPharmacies;
+      _searchResults = [];
+      _showSearchResults = false;
+    });
+
+    _showMsg('Đã xoá vùng chọn');
+  }
+
+  bool _pointInPolygon(LatLng point, List<LatLng> polygon) {
+    if (polygon.length < 3) return false;
+
+    bool inside = false;
+    int j = polygon.length - 1;
+
+    for (int i = 0; i < polygon.length; i++) {
+      final xi = polygon[i].longitude;
+      final yi = polygon[i].latitude;
+      final xj = polygon[j].longitude;
+      final yj = polygon[j].latitude;
+
+      final intersect =
+          ((yi > point.latitude) != (yj > point.latitude)) &&
+              (point.longitude <
+                  (xj - xi) *
+                      (point.latitude - yi) /
+                      ((yj - yi) == 0 ? 0.0000001 : (yj - yi)) +
+                      xi);
+
+      if (intersect) inside = !inside;
+      j = i;
+    }
+
+    return inside;
+  }
+
+  void _filterInSelectedArea() {
+    if (_areaPoints.length < 3) {
+      _showMsg('Cần chọn ít nhất 3 điểm để lọc vùng');
+      return;
+    }
+
+    final source = _allPharmacies.isNotEmpty ? _allPharmacies : _pharmacies;
+
+    final filtered = source.where((p) {
+      if (p.lat == 0 || p.lng == 0) return false;
+      return _pointInPolygon(LatLng(p.lat, p.lng), _areaPoints);
+    }).toList();
+
+    setState(() {
+      _pharmacies = filtered;
+      _searchResults = filtered;
+      _showSearchResults = true;
+      _showHeatmap = false;
+      _showToolPanel = false;
+      _isPickingArea = false;
+      _isAreaFiltered = true;
+    });
+
+    if (filtered.isNotEmpty) {
+      _fitMapToMarkers(filtered);
+    }
+
+    _showMsg('Đã lọc được ${filtered.length} nhà thuốc trong vùng');
+  }
+
+  Future<void> _saveSelectedArea() async {
+    if (_areaPoints.length < 3) {
+      _showMsg('Cần chọn ít nhất 3 điểm để lưu vùng');
+      return;
+    }
+
+    final controller = TextEditingController(
+      text: 'Vùng khảo sát ${DateTime.now().millisecondsSinceEpoch}',
+    );
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Lưu vùng khảo sát'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Tên vùng',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Huỷ'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+
+    if (name == null || name.isEmpty) return;
+
+    final ok = await _surveyAreaService.createSurveyArea(
+      name: name,
+      points: _areaPoints,
+    );
+
+    _showMsg(ok ? 'Đã lưu vùng' : 'Không lưu được vùng');
   }
 
   void _fitMapToMarkers(List<PharmacyModel> list) {
@@ -1382,8 +1550,8 @@ class _MapScreenState extends State<MapScreen> {
     final markers = validPharmacies.map((pharmacy) {
       return Marker(
         point: LatLng(pharmacy.lat, pharmacy.lng),
-        width: pharmacy.isSurveyed ? 46 : 36,
-        height: pharmacy.isSurveyed ? 46 : 36,
+        width: pharmacy.isSurveyed ? 34 : 26,
+        height: pharmacy.isSurveyed ? 34 : 26,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
@@ -1445,8 +1613,8 @@ class _MapScreenState extends State<MapScreen> {
             boxShadow: const [
               BoxShadow(
                 color: Color(0x22000000),
-                blurRadius: 3,
-                offset: Offset(0, 1),
+                blurRadius: 1,
+                offset: Offset(0, 0),
               ),
             ],
             border: Border.all(color: Colors.white, width: 1),
@@ -1477,7 +1645,6 @@ class _MapScreenState extends State<MapScreen> {
       ],
     );
   }
-
   Widget _buildMap() {
     return FlutterMap(
       mapController: _mapController,
@@ -1489,6 +1656,16 @@ class _MapScreenState extends State<MapScreen> {
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
         ),
+
+        // THÊM: chạm bản đồ để chọn điểm vùng
+        onTap: (tapPosition, point) {
+          if (!_isPickingArea) return;
+
+          setState(() {
+            _areaPoints.add(point);
+          });
+        },
+
         onPositionChanged: (position, hasGesture) {
           if (!hasGesture) return;
 
@@ -1506,10 +1683,38 @@ class _MapScreenState extends State<MapScreen> {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.pharmacy_mobile',
           tileDisplay: const TileDisplay.fadeIn(),
-          panBuffer: 0,
-          keepBuffer: 1,
+          panBuffer: 1,
+          keepBuffer: 2,
           maxNativeZoom: 19,
         ),
+
+        // THÊM: đường nối các điểm vùng
+        if (_areaPoints.length >= 2)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: _areaPoints.length >= 3
+                    ? [..._areaPoints, _areaPoints.first]
+                    : _areaPoints,
+                strokeWidth: 3,
+                color: const Color(0xFF7C3AED),
+              ),
+            ],
+          ),
+
+        // THÊM: vùng polygon
+        if (_areaPoints.length >= 3)
+          PolygonLayer(
+            polygons: [
+              Polygon(
+                points: _areaPoints,
+                color: const Color(0x557C3AED),
+                borderColor: const Color(0xFF7C3AED),
+                borderStrokeWidth: 2,
+              ),
+            ],
+          ),
+
         if (_showHeatmap && _heatPoints.isNotEmpty)
           HeatMapLayer(
             heatMapDataSource: InMemoryHeatMapDataSource(data: _heatPoints),
@@ -1518,11 +1723,12 @@ class _MapScreenState extends State<MapScreen> {
               radius: 18,
             ),
           ),
+
         RepaintBoundary(
           child: MarkerClusterLayerWidget(
             options: MarkerClusterLayerOptions(
-              maxClusterRadius: 120,
-              disableClusteringAtZoom: 17,
+              maxClusterRadius: 110,
+              disableClusteringAtZoom: 16,
               size: const Size(34, 34),
               alignment: Alignment.center,
               padding: const EdgeInsets.all(60),
@@ -1800,9 +2006,14 @@ class _MapScreenState extends State<MapScreen> {
                   children: [
                     const Text(
                       'Công cụ hiển thị',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
+
                     const SizedBox(height: 4),
+
                     Text(
                       'Quyền hiện tại: $_roleLabel',
                       style: TextStyle(
@@ -1811,7 +2022,9 @@ class _MapScreenState extends State<MapScreen> {
                         fontSize: 13,
                       ),
                     ),
+
                     const SizedBox(height: 10),
+
                     if (_canViewAdvancedFeatures) ...[
                       SizedBox(
                         width: double.infinity,
@@ -1829,14 +2042,19 @@ class _MapScreenState extends State<MapScreen> {
                             ),
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                           ),
-                          icon: const Icon(Icons.local_hospital, size: 18),
+                          icon: const Icon(
+                            Icons.local_hospital,
+                            size: 18,
+                          ),
                           label: const Text(
                             'Xem thông tin khu vực',
                             style: TextStyle(fontSize: 14),
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 8),
+
                       SizedBox(
                         width: double.infinity,
                         height: 44,
@@ -1851,7 +2069,9 @@ class _MapScreenState extends State<MapScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                           ),
                           icon: Icon(
-                            _showHeatmap ? Icons.layers_clear : Icons.local_fire_department,
+                            _showHeatmap
+                                ? Icons.layers_clear
+                                : Icons.local_fire_department,
                             size: 16,
                           ),
                           label: Text(
@@ -1860,8 +2080,146 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 8),
                     ],
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 42,
+                      child: ElevatedButton.icon(
+                        onPressed: _startPickArea,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C3AED),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        icon: const Icon(
+                          Icons.polyline,
+                          size: 18,
+                        ),
+                        label: Text(
+                          _isPickingArea ? 'Đang chọn vùng' : 'Chọn vùng',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    if (_areaPoints.isNotEmpty)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: ElevatedButton.icon(
+                          onPressed: _undoAreaPoint,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(
+                            Icons.undo,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Xoá điểm cuối',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+
+                    if (_areaPoints.isNotEmpty) const SizedBox(height: 8),
+
+                    if (_areaPoints.length >= 3)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: ElevatedButton.icon(
+                          onPressed: _filterInSelectedArea,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0EA5E9),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(
+                            Icons.filter_alt,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Lọc trong vùng',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+
+                    if (_areaPoints.length >= 3) const SizedBox(height: 8),
+
+                    if (_areaPoints.length >= 3)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: ElevatedButton.icon(
+                          onPressed: _saveSelectedArea,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF16A34A),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(
+                            Icons.save,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Lưu vùng',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+
+                    if (_areaPoints.isNotEmpty || _isAreaFiltered)
+                      const SizedBox(height: 8),
+
+                    if (_areaPoints.isNotEmpty || _isAreaFiltered)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: ElevatedButton.icon(
+                          onPressed: _clearArea,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(
+                            Icons.delete_sweep,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Xoá vùng',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+
+                    if (_areaPoints.isNotEmpty || _isAreaFiltered)
+                      const SizedBox(height: 8),
+
                     Row(
                       children: [
                         Expanded(
@@ -1875,9 +2233,13 @@ class _MapScreenState extends State<MapScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                padding:
+                                const EdgeInsets.symmetric(horizontal: 8),
                               ),
-                              icon: const Icon(Icons.my_location, size: 18),
+                              icon: const Icon(
+                                Icons.my_location,
+                                size: 18,
+                              ),
                               label: const Text(
                                 'Lấy vị trí',
                                 style: TextStyle(fontSize: 13),
@@ -1885,7 +2247,9 @@ class _MapScreenState extends State<MapScreen> {
                             ),
                           ),
                         ),
+
                         const SizedBox(width: 8),
+
                         SizedBox(
                           width: 60,
                           child: TextField(
@@ -1900,7 +2264,8 @@ class _MapScreenState extends State<MapScreen> {
                               isDense: true,
                               filled: true,
                               fillColor: const Color(0xFFF8FAFC),
-                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              contentPadding:
+                              const EdgeInsets.symmetric(vertical: 12),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -1909,7 +2274,9 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 8),
+
                     SizedBox(
                       width: double.infinity,
                       height: 42,
@@ -1923,11 +2290,19 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                           padding: const EdgeInsets.symmetric(horizontal: 10),
                         ),
-                        icon: const Icon(Icons.near_me, size: 18),
-                        label: const Text('Lọc gần tôi', style: TextStyle(fontSize: 14)),
+                        icon: const Icon(
+                          Icons.near_me,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'Lọc gần tôi',
+                          style: TextStyle(fontSize: 14),
+                        ),
                       ),
                     ),
+
                     const SizedBox(height: 6),
+
                     Row(
                       children: [
                         Transform.scale(
@@ -1942,10 +2317,14 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                         const Expanded(
-                          child: Text('Sắp xếp gần nhất', style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            'Sắp xếp gần nhất',
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                       ],
                     ),
+
                     if (_canExport) ...[
                       const SizedBox(height: 6),
                       SizedBox(
@@ -1961,12 +2340,20 @@ class _MapScreenState extends State<MapScreen> {
                             ),
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                           ),
-                          icon: const Icon(Icons.download, size: 18),
-                          label: const Text('Export CSV', style: TextStyle(fontSize: 14)),
+                          icon: const Icon(
+                            Icons.download,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Export CSV',
+                            style: TextStyle(fontSize: 14),
+                          ),
                         ),
                       ),
                     ],
+
                     const SizedBox(height: 8),
+
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
@@ -1975,13 +2362,21 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.location_on_outlined, color: Colors.black54, size: 18),
+                          const Icon(
+                            Icons.location_on_outlined,
+                            color: Colors.black54,
+                            size: 18,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              _myLocation == null ? 'Chưa lấy được vị trí' : 'Đã lấy vị trí hiện tại',
+                              _myLocation == null
+                                  ? 'Chưa lấy được vị trí'
+                                  : 'Đã lấy vị trí hiện tại',
                               style: TextStyle(
-                                color: _myLocation == null ? Colors.red : Colors.green,
+                                color: _myLocation == null
+                                    ? Colors.red
+                                    : Colors.green,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
                               ),
@@ -1990,10 +2385,13 @@ class _MapScreenState extends State<MapScreen> {
                         ],
                       ),
                     ),
+
                     const SizedBox(height: 8),
+
                     Text(
                       'Tổng DB: ${_totalPharmacyCount == 0 ? 25000 : _totalPharmacyCount}\n'
-                          'Marker đang tải: ${_pharmacies.length}',
+                          'Marker đang tải: ${_pharmacies.length}\n'
+                          'Điểm vùng: ${_areaPoints.length}',
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
@@ -2185,6 +2583,7 @@ class _MapScreenState extends State<MapScreen> {
           if (_showSearchBar) _buildSearchBox(),
           if (!_showSearchBar) _buildTopRightControls(),
           _buildToolPanel(),
+          if (_showSearchResults) _buildSearchResultPanel(),
           if (_showSearchResults) _buildSearchResultPanel(),
         ],
       ),

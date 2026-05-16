@@ -30,12 +30,18 @@ class AuthService {
         'user': data['user'],
       };
     } on DioException catch (e) {
+      print('REGISTER ERROR STATUS: ${e.response?.statusCode}');
+      print('REGISTER ERROR DATA: ${e.response?.data}');
+      print('REGISTER ERROR MESSAGE: ${e.message}');
+
       return {
         'success': false,
         'message': e.response?.data?['message']?.toString() ??
             'Không thể đăng ký. Vui lòng thử lại.',
       };
-    } catch (_) {
+    } catch (e) {
+      print('REGISTER UNKNOWN ERROR: $e');
+
       return {
         'success': false,
         'message': 'Đã xảy ra lỗi không xác định.',
@@ -43,7 +49,10 @@ class AuthService {
     }
   }
 
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(
+      String email,
+      String password,
+      ) async {
     try {
       final response = await _dio.post(
         '/auth/login',
@@ -54,11 +63,19 @@ class AuthService {
       );
 
       final data = response.data as Map<String, dynamic>;
+
       final token = data['token']?.toString() ?? '';
-      final userJson = Map<String, dynamic>.from(data['user'] ?? {});
+
+      print('TOKEN LOGIN: $token');
+
+      final userJson = Map<String, dynamic>.from(
+        data['user'] ?? {},
+      );
+
       final user = UserModel.fromJson(userJson);
 
       final prefs = await SharedPreferences.getInstance();
+
       await prefs.setString('token', token);
       await prefs.setInt('user_id', user.id);
       await prefs.setString('fullname', user.fullname);
@@ -67,17 +84,24 @@ class AuthService {
 
       return {
         'success': data['success'] == true,
-        'message': data['message']?.toString() ?? 'Đăng nhập thành công',
+        'message':
+        data['message']?.toString() ?? 'Đăng nhập thành công',
         'token': token,
         'user': user,
       };
     } on DioException catch (e) {
+      print('LOGIN ERROR STATUS: ${e.response?.statusCode}');
+      print('LOGIN ERROR DATA: ${e.response?.data}');
+      print('LOGIN ERROR MESSAGE: ${e.message}');
+
       return {
         'success': false,
         'message': e.response?.data?['message']?.toString() ??
             'Không thể đăng nhập. Vui lòng thử lại.',
       };
-    } catch (_) {
+    } catch (e) {
+      print('LOGIN UNKNOWN ERROR: $e');
+
       return {
         'success': false,
         'message': 'Đã xảy ra lỗi không xác định.',
@@ -87,6 +111,7 @@ class AuthService {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.remove('token');
     await prefs.remove('user_id');
     await prefs.remove('fullname');
@@ -96,23 +121,30 @@ class AuthService {
 
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
+
     final token = prefs.getString('token');
+
     return token != null && token.isNotEmpty;
   }
 
   Future<String?> getRole() async {
     final prefs = await SharedPreferences.getInstance();
+
     return prefs.getString('role');
   }
 
   Future<UserModel?> getCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
+
     final id = prefs.getInt('user_id');
     final fullname = prefs.getString('fullname');
     final email = prefs.getString('email');
     final role = prefs.getString('role');
 
-    if (id == null || fullname == null || email == null || role == null) {
+    if (id == null ||
+        fullname == null ||
+        email == null ||
+        role == null) {
       return null;
     }
 

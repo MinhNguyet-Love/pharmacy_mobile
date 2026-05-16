@@ -9,6 +9,7 @@ class PharmacyModel {
   final double? rating;
   final String imageUrl;
   final List<String> productGroups;
+  final String ownerName;
   final bool isSurveyed;
   final String? surveyedAt;
   final double lat;
@@ -25,6 +26,7 @@ class PharmacyModel {
     required this.rating,
     required this.imageUrl,
     required this.productGroups,
+    required this.ownerName,
     required this.isSurveyed,
     required this.surveyedAt,
     required this.lat,
@@ -47,6 +49,7 @@ class PharmacyModel {
       rating: _toDoubleNullable(properties['rating']),
       imageUrl: properties['image_url']?.toString() ?? '',
       productGroups: _toStringList(properties['product_groups']),
+      ownerName: properties['owner_name']?.toString() ?? '',
       isSurveyed: _toBool(properties['is_surveyed']),
       surveyedAt: properties['surveyed_at']?.toString(),
       lat: coordinates.length > 1 ? _toDouble(coordinates[1]) : 0.0,
@@ -66,6 +69,7 @@ class PharmacyModel {
       rating: _toDoubleNullable(json['rating']),
       imageUrl: json['image_url']?.toString() ?? '',
       productGroups: _toStringList(json['product_groups']),
+      ownerName: json['owner_name']?.toString() ?? '',
       isSurveyed: _toBool(json['is_surveyed']),
       surveyedAt: json['surveyed_at']?.toString(),
       lat: _toDouble(json['lat']),
@@ -84,6 +88,7 @@ class PharmacyModel {
       'rating': rating,
       'image_url': imageUrl,
       'product_groups': productGroups,
+      'owner_name': ownerName,
     };
   }
 
@@ -98,6 +103,7 @@ class PharmacyModel {
     double? rating,
     String? imageUrl,
     List<String>? productGroups,
+    String? ownerName,
     bool? isSurveyed,
     String? surveyedAt,
     double? lat,
@@ -114,6 +120,7 @@ class PharmacyModel {
       rating: rating ?? this.rating,
       imageUrl: imageUrl ?? this.imageUrl,
       productGroups: productGroups ?? this.productGroups,
+      ownerName: ownerName ?? this.ownerName,
       isSurveyed: isSurveyed ?? this.isSurveyed,
       surveyedAt: surveyedAt ?? this.surveyedAt,
       lat: lat ?? this.lat,

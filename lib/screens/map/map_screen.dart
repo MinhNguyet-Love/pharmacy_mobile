@@ -1063,8 +1063,10 @@ class _MapScreenState extends State<MapScreen> {
     final provinceController = TextEditingController(text: pharmacy.province);
     final districtController = TextEditingController(text: pharmacy.district);
     final phoneController = TextEditingController(text: pharmacy.phone);
+    final ownerNameController = TextEditingController(text: pharmacy.ownerName);
     final statusController = TextEditingController(text: pharmacy.status);
-    final ratingController = TextEditingController(text: pharmacy.rating?.toString() ?? '');
+    final ratingController =
+    TextEditingController(text: pharmacy.rating?.toString() ?? '');
     final imageController = TextEditingController(text: pharmacy.imageUrl);
 
     final List<String> productOptions = [
@@ -1117,6 +1119,72 @@ class _MapScreenState extends State<MapScreen> {
             Future<void> saveUpdate() async {
               if (saving) return;
 
+              final nameText = nameController.text.trim();
+              final addressText = addressController.text.trim();
+              final provinceText = provinceController.text.trim();
+              final districtText = districtController.text.trim();
+              final phoneText = phoneController.text.trim();
+              final ownerNameText = ownerNameController.text.trim();
+              final statusText = statusController.text.trim();
+              final ratingText = ratingController.text.trim();
+
+              if (nameText.isEmpty) {
+                _showMsg('Vui lòng nhập tên nhà thuốc');
+                return;
+              }
+
+              if (addressText.isEmpty) {
+                _showMsg('Vui lòng nhập địa chỉ nhà thuốc');
+                return;
+              }
+
+              if (provinceText.isEmpty) {
+                _showMsg('Vui lòng nhập tỉnh / thành phố');
+                return;
+              }
+
+              if (districtText.isEmpty) {
+                _showMsg('Vui lòng nhập quận / huyện');
+                return;
+              }
+
+              if (phoneText.isEmpty) {
+                _showMsg('Vui lòng nhập số điện thoại');
+                return;
+              }
+
+              if (phoneText.length < 9) {
+                _showMsg('Số điện thoại không hợp lệ');
+                return;
+              }
+
+              if (ownerNameText.isEmpty) {
+                _showMsg('Vui lòng nhập chủ sở hữu');
+                return;
+              }
+
+              if (statusText.isEmpty) {
+                _showMsg('Vui lòng nhập trạng thái nhà thuốc');
+                return;
+              }
+
+              final ratingValue = double.tryParse(ratingText);
+
+              if (ratingText.isNotEmpty && ratingValue == null) {
+                _showMsg('Rating phải là số');
+                return;
+              }
+
+              if (ratingValue != null && (ratingValue < 0 || ratingValue > 5)) {
+                _showMsg('Rating phải từ 0 đến 5');
+                return;
+              }
+
+              if (selectedProducts.isEmpty) {
+                _showMsg('Vui lòng chọn ít nhất 1 nhóm sản phẩm');
+                return;
+              }
+
               if (_myLocation == null) {
                 await _getMyLocation();
               }
@@ -1149,15 +1217,16 @@ class _MapScreenState extends State<MapScreen> {
 
                 final updated = await _pharmacyService.updatePharmacy(
                   id: pharmacy.id,
-                  name: nameController.text.trim(),
-                  address: addressController.text.trim(),
-                  province: provinceController.text.trim(),
-                  district: districtController.text.trim(),
-                  phone: phoneController.text.trim(),
-                  status: statusController.text.trim(),
-                  rating: double.tryParse(ratingController.text.trim()),
+                  name: nameText,
+                  address: addressText,
+                  province: provinceText,
+                  district: districtText,
+                  phone: phoneText,
+                  status: statusText,
+                  rating: ratingValue,
                   imageUrl: finalImageUrl,
                   productGroups: selectedProducts,
+                  ownerName: ownerNameText,
                 );
 
                 if (!mounted) return;
@@ -1190,21 +1259,34 @@ class _MapScreenState extends State<MapScreen> {
                   children: [
                     const Text(
                       'Cập nhật thông tin nhà thuốc',
-                      style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 16),
-                    _editField('Tên nhà thuốc', nameController),
-                    _editField('Địa chỉ', addressController, maxLines: 2),
-                    _editField('Tỉnh / Thành phố', provinceController),
-                    _editField('Quận / Huyện', districtController),
-                    _editField('Số điện thoại', phoneController),
-                    _editField('Trạng thái', statusController),
+                    _editField('Tên nhà thuốc *', nameController),
+                    _editField('Địa chỉ *', addressController, maxLines: 2),
+                    _editField('Tỉnh / Thành phố *', provinceController),
+                    _editField('Quận / Huyện *', districtController),
+                    _editField(
+                      'Số điện thoại *',
+                      phoneController,
+                      keyboardType: TextInputType.phone,
+                    ),
+                    _editField('Chủ sở hữu *', ownerNameController),
+                    _editField('Trạng thái *', statusController),
                     _editField(
                       'Rating',
                       ratingController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                     ),
-                    _editField('URL ảnh nhà thuốc', imageController, maxLines: 2),
+                    _editField(
+                      'URL ảnh nhà thuốc',
+                      imageController,
+                      maxLines: 2,
+                    ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -1239,7 +1321,7 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                     const SizedBox(height: 14),
                     const Text(
-                      'Nhóm sản phẩm nhà thuốc bán',
+                      'Nhóm sản phẩm nhà thuốc bán *',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),

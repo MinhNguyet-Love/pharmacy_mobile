@@ -185,6 +185,7 @@ class PharmacyService {
     double? rating,
     String? imageUrl,
     List<String>? productGroups,
+    String? ownerName,
   }) async {
     try {
       print('UPDATE PHARMACY URL: /pharmacies/$id');
@@ -201,6 +202,7 @@ class PharmacyService {
           'rating': rating,
           'image_url': imageUrl,
           'product_groups': productGroups,
+          'owner_name': ownerName,
         },
       );
 

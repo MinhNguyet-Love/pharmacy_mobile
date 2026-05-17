@@ -61,6 +61,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _showToolPanel = false;
   bool _isPickingArea = false;
   bool _isAreaFiltered = false;
+  bool _markersEnabled = false;
 
   List<LatLng> _areaPoints = [];
 
@@ -124,26 +125,26 @@ class _MapScreenState extends State<MapScreen> {
       final results = await Future.wait([
         _pharmacyService.getProvinces(),
         _pharmacyService.getPharmacyCount(),
-        _pharmacyService.getPharmaciesGeoJson(
-          bbox: '102.0,8.0,110.5,24.5',
-          limit: 8000,
-          mode: 'overview',
-        ),
       ]);
 
       final provinces = results[0] as List<String>;
       final total = results[1] as int;
-      final pharmacies = results[2] as List<PharmacyModel>;
 
       if (!mounted) return;
 
       setState(() {
         _provinces = provinces;
         _totalPharmacyCount = total;
-        _allPharmacies = pharmacies;
-        _pharmacies = pharmacies;
+
+        // KHÔNG LOAD MARKER KHI MỞ APP
+        _markersEnabled = false;
+
+        _allPharmacies = [];
+        _pharmacies = [];
         _searchResults = [];
+
         _showSearchResults = false;
+
         _isLoading = false;
       });
 
@@ -154,7 +155,8 @@ class _MapScreenState extends State<MapScreen> {
       if (!mounted) return;
 
       setState(() => _isLoading = false);
-      _showMsg('Không tải được dữ liệu bản đồ. Kiểm tra backend/API.');
+
+      _showMsg('Không tải được dữ liệu ban đầu');
     }
   }
 
@@ -188,7 +190,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _loadPharmaciesByViewport() async {
     if (_isViewportLoading) return;
-
+    if (!_markersEnabled) return;
     final zoom = _mapController.camera.zoom;
 
     if (zoom < 8) {
@@ -239,7 +241,10 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _applyFilter() async {
     Navigator.pop(context);
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _markersEnabled = true;
+    });
 
     try {
       final ratingMin = double.tryParse(_ratingController.text.trim());
@@ -1513,14 +1518,23 @@ class _MapScreenState extends State<MapScreen> {
                 children: [
                   const Text(
                     'Bộ lọc dữ liệu',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+
                   const SizedBox(height: 18),
+
                   const Text(
                     'Tỉnh / Thành phố',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+
                   const SizedBox(height: 8),
+
                   DropdownButtonFormField<String>(
                     value: _selectedProvince,
                     isExpanded: true,
@@ -1538,6 +1552,7 @@ class _MapScreenState extends State<MapScreen> {
                         value: null,
                         child: Text('-- Tất cả --'),
                       ),
+
                       ..._provinces.map(
                             (province) => DropdownMenuItem<String>(
                           value: province,
@@ -1551,15 +1566,24 @@ class _MapScreenState extends State<MapScreen> {
                       });
                     },
                   ),
+
                   const SizedBox(height: 16),
+
                   const Text(
                     'Rating tối thiểu',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+
                   const SizedBox(height: 8),
+
                   TextField(
                     controller: _ratingController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                    const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       hintText: 'VD: 4.0',
                       filled: true,
@@ -1570,7 +1594,9 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 22),
+
                   SizedBox(
                     width: double.infinity,
                     height: 52,
@@ -1585,11 +1611,15 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                       child: const Text(
                         'Áp dụng bộ lọc',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 10),
+
                   SizedBox(
                     width: double.infinity,
                     height: 52,
@@ -1597,15 +1627,27 @@ class _MapScreenState extends State<MapScreen> {
                       onPressed: () {
                         setState(() {
                           _selectedProvince = null;
+
                           _ratingController.clear();
-                          _pharmacies = _allPharmacies;
+
+                          // TẮT MARKER
+                          _markersEnabled = false;
+
+                          _allPharmacies = [];
+                          _pharmacies = [];
                           _searchResults = [];
+
                           _showHeatmap = false;
                           _showSearchResults = false;
+                          _isAreaFiltered = false;
                         });
 
                         Navigator.pop(context);
-                        _mapController.move(_defaultCenter, 5.6);
+
+                        _mapController.move(
+                          _defaultCenter,
+                          5.6,
+                        );
                       },
                       style: OutlinedButton.styleFrom(
                         shape: RoundedRectangleBorder(

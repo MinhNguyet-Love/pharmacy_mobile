@@ -5,17 +5,28 @@ import 'api_service.dart';
 
 class SurveyAreaService {
   Map<String, dynamic> _polygonToJson(List<LatLng> points) {
+    final coords = points
+        .map(
+          (p) => [
+        p.longitude,
+        p.latitude,
+      ],
+    )
+        .toList();
+
+    if (coords.isNotEmpty) {
+      final first = coords.first;
+      final last = coords.last;
+
+      if (first[0] != last[0] || first[1] != last[1]) {
+        coords.add(first);
+      }
+    }
+
     return {
       'type': 'Polygon',
       'coordinates': [
-        points
-            .map(
-              (p) => [
-            p.longitude,
-            p.latitude,
-          ],
-        )
-            .toList(),
+        coords,
       ],
     };
   }
@@ -66,7 +77,7 @@ class SurveyAreaService {
         return false;
       }
 
-      await ApiService.dio.post(
+      final res = await ApiService.dio.post(
         '/survey-areas',
         data: {
           'name': name,
@@ -74,7 +85,7 @@ class SurveyAreaService {
         },
       );
 
-      return true;
+      return res.statusCode == 200 || res.statusCode == 201;
     } on DioException catch (e) {
       print('CREATE SURVEY AREA STATUS: ${e.response?.statusCode}');
       print('CREATE SURVEY AREA DATA: ${e.response?.data}');
@@ -88,7 +99,6 @@ class SurveyAreaService {
   Future<List<Map<String, dynamic>>> getMySurveyAreas() async {
     try {
       final res = await ApiService.dio.get('/survey-areas/my');
-
       final data = res.data;
 
       if (data is List) {
@@ -111,7 +121,7 @@ class SurveyAreaService {
     List<LatLng>? points,
   }) async {
     try {
-      await ApiService.dio.put(
+      final res = await ApiService.dio.put(
         '/survey-areas/$id',
         data: {
           if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
@@ -120,7 +130,7 @@ class SurveyAreaService {
         },
       );
 
-      return true;
+      return res.statusCode == 200;
     } catch (e) {
       print('UPDATE SURVEY AREA ERROR: $e');
       return false;
@@ -129,9 +139,8 @@ class SurveyAreaService {
 
   Future<bool> deleteSurveyArea(int id) async {
     try {
-      await ApiService.dio.delete('/survey-areas/$id');
-
-      return true;
+      final res = await ApiService.dio.delete('/survey-areas/$id');
+      return res.statusCode == 200;
     } catch (e) {
       print('DELETE SURVEY AREA ERROR: $e');
       return false;
@@ -141,7 +150,6 @@ class SurveyAreaService {
   Future<List<Map<String, dynamic>>> adminGetSurveyUsers() async {
     try {
       final res = await ApiService.dio.get('/survey-areas/admin/users');
-
       final data = res.data;
 
       if (data is List) {
@@ -184,9 +192,8 @@ class SurveyAreaService {
 
   Future<bool> adminDeleteSurveyArea(int id) async {
     try {
-      await ApiService.dio.delete('/survey-areas/admin/$id');
-
-      return true;
+      final res = await ApiService.dio.delete('/survey-areas/admin/$id');
+      return res.statusCode == 200;
     } catch (e) {
       print('ADMIN DELETE SURVEY AREA ERROR: $e');
       return false;

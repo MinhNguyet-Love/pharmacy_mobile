@@ -101,6 +101,14 @@ class SurveyAreaService {
       final res = await ApiService.dio.get('/survey-areas/my');
       final data = res.data;
 
+      if (data is Map && data['data'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (data['data'] as List).map(
+                (e) => Map<String, dynamic>.from(e as Map),
+          ),
+        );
+      }
+
       if (data is List) {
         return data
             .whereType<Map>()
@@ -111,6 +119,40 @@ class SurveyAreaService {
       return [];
     } catch (e) {
       print('GET MY SURVEY AREAS ERROR: $e');
+      return [];
+    }
+  }
+
+  // QUAN TRỌNG:
+  // Dùng cho tài khoản company_staff.
+  // API này lấy đúng vùng mà company đã giao cho nhân viên.
+  Future<List<Map<String, dynamic>>> getAssignedSurveyAreasForStaff() async {
+    try {
+      final res = await ApiService.dio.get('/survey-areas/staff/assigned');
+      final data = res.data;
+
+      if (data is Map && data['data'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (data['data'] as List).map(
+                (e) => Map<String, dynamic>.from(e as Map),
+          ),
+        );
+      }
+
+      if (data is List) {
+        return data
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
+      return [];
+    } on DioException catch (e) {
+      print('GET ASSIGNED AREAS STATUS: ${e.response?.statusCode}');
+      print('GET ASSIGNED AREAS DATA: ${e.response?.data}');
+      return [];
+    } catch (e) {
+      print('GET ASSIGNED AREAS ERROR: $e');
       return [];
     }
   }
@@ -152,6 +194,14 @@ class SurveyAreaService {
       final res = await ApiService.dio.get('/survey-areas/admin/users');
       final data = res.data;
 
+      if (data is Map && data['data'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (data['data'] as List).map(
+                (e) => Map<String, dynamic>.from(e as Map),
+          ),
+        );
+      }
+
       if (data is List) {
         return data
             .whereType<Map>()
@@ -175,6 +225,14 @@ class SurveyAreaService {
       );
 
       final data = res.data;
+
+      if (data is Map && data['data'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (data['data'] as List).map(
+                (e) => Map<String, dynamic>.from(e as Map),
+          ),
+        );
+      }
 
       if (data is List) {
         return data

@@ -5,6 +5,7 @@ import '../admin/admin_home_screen.dart';
 import '../auth/login_screen.dart';
 import '../company/company_home_screen.dart';
 import '../user/user_home_screen.dart';
+import '../map/map_screen.dart';
 
 class RoleHomeScreen extends StatefulWidget {
   const RoleHomeScreen({super.key});
@@ -44,9 +45,15 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
       case 'admin':
         target = AdminHomeScreen(user: user);
         break;
+
       case 'company':
         target = CompanyHomeScreen(user: user);
         break;
+
+      case 'company_staff':
+        target = const MapScreen(role: 'company_staff');
+        break;
+
       default:
         target = UserHomeScreen(user: user);
         break;
@@ -57,7 +64,9 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
       MaterialPageRoute(builder: (_) => target),
     );
 
-    setState(() => _loading = false);
+    if (mounted) {
+      setState(() => _loading = false);
+    }
   }
 
   @override

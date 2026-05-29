@@ -35,7 +35,7 @@ class AuthService {
         'message': e.response?.data?['message']?.toString() ??
             'Không thể đăng ký. Vui lòng thử lại.',
       };
-    } catch (_) {
+    } catch (e) {
       return {
         'success': false,
         'message': 'Đã xảy ra lỗi không xác định.',
@@ -43,7 +43,10 @@ class AuthService {
     }
   }
 
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(
+      String email,
+      String password,
+      ) async {
     try {
       final response = await _dio.post(
         '/auth/login',
@@ -55,15 +58,24 @@ class AuthService {
 
       final data = response.data as Map<String, dynamic>;
       final token = data['token']?.toString() ?? '';
+
       final userJson = Map<String, dynamic>.from(data['user'] ?? {});
       final user = UserModel.fromJson(userJson);
 
       final prefs = await SharedPreferences.getInstance();
+
       await prefs.setString('token', token);
       await prefs.setInt('user_id', user.id);
       await prefs.setString('fullname', user.fullname);
       await prefs.setString('email', user.email);
       await prefs.setString('role', user.role);
+
+      if (userJson['company_id'] != null) {
+        final companyId = int.tryParse(userJson['company_id'].toString());
+        if (companyId != null) {
+          await prefs.setInt('company_id', companyId);
+        }
+      }
 
       return {
         'success': data['success'] == true,
@@ -77,7 +89,7 @@ class AuthService {
         'message': e.response?.data?['message']?.toString() ??
             'Không thể đăng nhập. Vui lòng thử lại.',
       };
-    } catch (_) {
+    } catch (e) {
       return {
         'success': false,
         'message': 'Đã xảy ra lỗi không xác định.',
@@ -87,11 +99,13 @@ class AuthService {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.remove('token');
     await prefs.remove('user_id');
     await prefs.remove('fullname');
     await prefs.remove('email');
     await prefs.remove('role');
+    await prefs.remove('company_id');
   }
 
   Future<bool> isLoggedIn() async {
@@ -107,6 +121,7 @@ class AuthService {
 
   Future<UserModel?> getCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
+
     final id = prefs.getInt('user_id');
     final fullname = prefs.getString('fullname');
     final email = prefs.getString('email');

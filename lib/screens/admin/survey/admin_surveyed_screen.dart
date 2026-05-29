@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../../services/admin_service.dart';
 
 class AdminSurveyedScreen extends StatefulWidget {
@@ -188,7 +187,7 @@ class _AdminSurveyedScreenState extends State<AdminSurveyedScreen> {
   }
 
   void _showDetail(Map<String, dynamic> p) {
-    final img = p['image']?.toString() ?? '';
+    final img = p['image_url']?.toString() ?? '';
     final surveyed = _boolValue(p['is_surveyed']);
 
     showModalBottomSheet(
@@ -282,6 +281,7 @@ class _AdminSurveyedScreenState extends State<AdminSurveyedScreen> {
                   _detail('Tỉnh / Thành', p['province']),
                   _detail('Quận / Huyện', p['district']),
                   _detail('Số điện thoại', p['phone']),
+                  _detail('Chủ sở hữu', p['owner_name']), // Đã sửa lỗi thừa dấu phẩy
                   _detail('Rating', p['rating']),
                   _detail('Thời gian khảo sát', p['surveyed_at']),
                   _detail(
@@ -443,7 +443,7 @@ class _AdminSurveyedScreenState extends State<AdminSurveyedScreen> {
               itemCount: _rows.length,
               itemBuilder: (context, index) {
                 final p = _rows[index];
-                final img = p['image']?.toString() ?? '';
+                final img = p['image_url']?.toString() ?? '';
                 final surveyed = _boolValue(p['is_surveyed']);
 
                 return Card(
@@ -457,7 +457,7 @@ class _AdminSurveyedScreenState extends State<AdminSurveyedScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           GestureDetector(
                             onTap: img.isEmpty
@@ -490,8 +490,7 @@ class _AdminSurveyedScreenState extends State<AdminSurveyedScreen> {
                                   return Container(
                                     width: 64,
                                     height: 64,
-                                    color:
-                                    const Color(0xFFFFE4EE),
+                                    color: const Color(0xFFFFE4EE),
                                     child: const Icon(
                                       Icons.broken_image,
                                       color: Colors.pink,
@@ -506,8 +505,7 @@ class _AdminSurveyedScreenState extends State<AdminSurveyedScreen> {
 
                           Expanded(
                             child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   p['name']?.toString() ?? '',
@@ -545,12 +543,19 @@ class _AdminSurveyedScreenState extends State<AdminSurveyedScreen> {
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
+                                  if ((p['owner_name'] ?? '').toString().isNotEmpty)
+                                    Text(
+                                      '👤 Chủ sở hữu: ${p['owner_name']}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
                                 ],
                               ],
                             ),
                           ),
-
-                          const Icon(Icons.chevron_right),
+                          const Icon(Icons.chevron_right, color: Colors.grey),
                         ],
                       ),
                     ),

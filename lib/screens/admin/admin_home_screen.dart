@@ -156,6 +156,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               totalUsers: _num('total_users'),
               companyUsers: _num('company_users'),
               adminUsers: _num('admin_users'),
+
             ),
 
             const SizedBox(height: 20),

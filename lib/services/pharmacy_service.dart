@@ -149,6 +149,8 @@ class PharmacyService {
     try {
       final fileName = imageFile.path.split('/').last;
 
+      print('UPLOAD FILE: ${imageFile.path}');
+
       final formData = FormData.fromMap({
         'image': await MultipartFile.fromFile(
           imageFile.path,
@@ -159,7 +161,15 @@ class PharmacyService {
       final response = await ApiService.dio.post(
         '/upload-image',
         data: formData,
+        options: Options(
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        ),
       );
+
+      print('UPLOAD RESPONSE STATUS: ${response.statusCode}');
+      print('UPLOAD RESPONSE DATA: ${response.data}');
 
       final data = response.data;
 
@@ -168,23 +178,32 @@ class PharmacyService {
       }
 
       return null;
+    } on DioException catch (e) {
+      print('UPLOAD IMAGE STATUS: ${e.response?.statusCode}');
+      print('UPLOAD IMAGE DATA: ${e.response?.data}');
+      print('UPLOAD IMAGE ERROR: ${e.message}');
+      return null;
     } catch (e) {
       print('UPLOAD IMAGE ERROR: $e');
       return null;
     }
   }
-
   Future<PharmacyModel?> updatePharmacy({
     required int id,
     String? name,
     String? address,
     String? province,
     String? district,
+    String? ward,
+    String? streetAddress,
     String? phone,
     String? status,
     double? rating,
     String? imageUrl,
     List<String>? productGroups,
+    String? ownerName,
+    String? businessType,
+    String? surveyNote,
   }) async {
     try {
       print('UPDATE PHARMACY URL: /pharmacies/$id');
@@ -196,11 +215,16 @@ class PharmacyService {
           'address': address,
           'province': province,
           'district': district,
+          'ward': ward,
+          'street_address': streetAddress,
           'phone': phone,
           'status': status,
           'rating': rating,
           'image_url': imageUrl,
           'product_groups': productGroups,
+          'owner_name': ownerName,
+          'business_type': businessType,
+          'survey_note': surveyNote,
         },
       );
 

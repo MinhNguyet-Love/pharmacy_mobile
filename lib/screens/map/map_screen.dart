@@ -3518,7 +3518,8 @@ class _MapScreenState extends State<MapScreen> {
                 child: Container(color: Colors.black.withOpacity(0.08)),
               ),
             ),
-          if (!_showSearchBar) _buildBackButton(),
+          if (!_showSearchBar && !isCompanyStaff)
+            _buildBackButton(),
           if (!_showSearchBar) _buildTopTitle(),
 
           // 4. Ẩn searchbox hoàn toàn cho nhân viên thực địa
